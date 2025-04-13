@@ -7,13 +7,15 @@ import {
   Param,
   Delete,
   ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { RawMaterialsService } from './raw-materials.service';
 import { CreateRawMaterialDto } from './dto/create-raw-material.dto';
 import { UpdateRawMaterialDto } from './dto/update-raw-material.dto';
 
 @Controller('raw-materials')
-// @UseGuards(AuthGuard('jwt')) // Proteger si es necesario
+@UseGuards(AuthGuard('jwt')) // Aplicar guardia a todo el controlador
 export class RawMaterialsController {
   constructor(private readonly rawMaterialsService: RawMaterialsService) {}
 

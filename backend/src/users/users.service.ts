@@ -25,14 +25,26 @@ export class UsersService {
 
     try {
       return await this.usersRepository.save(newUser);
-    } catch (error: any) {
-      if (error?.code === '23505') {
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
         throw new ConflictException('El correo electrónico ya está registrado');
       }
       throw error;
     }
   }
 
+  // Método para encontrar usuario por ID
+  async findOne(id: number): Promise<User | null> {
+    const user = await this.usersRepository.findOne({ where: { id } });
+    if (!user) {
+      // Podríamos lanzar NotFoundException aquí si se prefiere, 
+      // pero JwtStrategy ya maneja el caso de usuario no encontrado
+      return null;
+    }
+    return user;
+  }
+
+  // Método para encontrar usuario por email
   async findOneByEmail(email: string): Promise<User | null> {
     return this.usersRepository.findOne({ where: { email } });
   }
