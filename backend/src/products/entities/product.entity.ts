@@ -5,7 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
+import { RawMaterial } from '../../raw-materials/entities/raw-material.entity';
 
 @Entity('products')
 export class Product {
@@ -42,6 +45,17 @@ export class Product {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  // Relación Muchos a Muchos con RawMaterial
+  @ManyToMany(() => RawMaterial, (rawMaterial) => rawMaterial.products, {
+    cascade: false, // No eliminar materias primas si se elimina el producto
+  })
+  @JoinTable({ // Define la tabla intermedia (product_raw_materials_raw_material)
+    name: 'product_materials', // Nombre personalizado para la tabla intermedia (opcional)
+    joinColumn: { name: 'product_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'raw_material_id', referencedColumnName: 'id' },
+  })
+  rawMaterials: RawMaterial[];
 
   // Aquí podríamos añadir relaciones en el futuro
   // @ManyToOne(() => Category, category => category.products)

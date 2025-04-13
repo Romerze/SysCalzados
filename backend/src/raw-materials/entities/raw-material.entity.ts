@@ -5,7 +5,9 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
+  ManyToMany,
 } from 'typeorm';
+import { Product } from '../../products/entities/product.entity';
 
 @Entity('raw_materials')
 export class RawMaterial {
@@ -30,4 +32,7 @@ export class RawMaterial {
 
   @Column({ nullable: true })
   supplierId?: number;
+
+  @ManyToMany(() => Product, (product) => product.rawMaterials)
+  products: Product[];
 } 

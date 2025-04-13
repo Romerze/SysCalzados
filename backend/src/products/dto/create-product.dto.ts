@@ -7,6 +7,9 @@ import {
   Min,
   IsPositive,
   // IsDecimal, // No se está usando, usar IsNumber con maxDecimalPlaces
+  IsArray,
+  ArrayMinSize,
+  IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer'; // Necesario para transformar tipos (ej. string a number)
 
@@ -53,4 +56,11 @@ export class CreateProductDto {
   @IsPositive({ message: 'El precio de venta debe ser positivo' })
   @Type(() => Number)
   sellingPrice: number;
+
+  @IsOptional()
+  @IsArray({ message: 'Las materias primas deben ser un arreglo de IDs' })
+  @ArrayMinSize(1, { message: 'Debe seleccionar al menos una materia prima si se proporciona el campo' })
+  @IsInt({ each: true, message: 'Cada ID de materia prima debe ser un número entero' })
+  @Type(() => Number) // Asegurar que los IDs sean números aunque vengan como strings
+  rawMaterialIds?: number[];
 } 
