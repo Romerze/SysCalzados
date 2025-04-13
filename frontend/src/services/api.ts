@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { LoginFormValues, RegisterFormValues } from '../types/formTypes';
-import { Supplier, RawMaterial } from '../types/models'; // Importar tipo Supplier y RawMaterial
+import { Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem } from '../types/models'; // Importar tipo Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem
 
 // Crear instancia de Axios con la URL base del backend
 const apiClient = axios.create({
@@ -28,6 +28,27 @@ type UpdateSupplierPayload = Partial<CreateSupplierPayload>;
 // Tipos para RawMaterial DTOs
 type CreateRawMaterialPayload = Omit<RawMaterial, 'id' | 'supplier'>; // Excluir id y objeto supplier
 type UpdateRawMaterialPayload = Partial<CreateRawMaterialPayload>;
+
+// Tipos para Client DTOs
+type CreateClientPayload = Omit<Client, 'id'>; 
+type UpdateClientPayload = Partial<CreateClientPayload>;
+
+// Tipo auxiliar para el payload de composición
+type CompositionItemPayload = Omit<CompositionItem, 'id' | 'rawMaterial'>; // Solo enviar id y quantity
+
+// Tipos para Product DTOs
+type CreateProductPayload = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'composition'> & {
+  composition?: CompositionItemPayload[];
+};
+type UpdateProductPayload = Partial<CreateProductPayload>;
+
+// Tipos para StockMovement DTOs
+type CreateStockMovementPayload = {
+  rawMaterialId: number;
+  type: MovementType;
+  quantity: number;
+  notes?: string;
+};
 
 // --- Funciones del Servicio API ---
 
@@ -91,6 +112,85 @@ export const deleteRawMaterial = async (id: number): Promise<void> => {
   await apiClient.delete(`/raw-materials/${id}`);
 };
 
-// Podríamos añadir funciones para obtener/poner el token JWT en las cabeceras aquí más tarde
+// --- Funciones API Clients --- 
+
+export const getClients = async (): Promise<Client[]> => {
+  const response = await apiClient.get<Client[]>('/clients');
+  return response.data;
+};
+
+export const createClient = async (clientData: CreateClientPayload): Promise<Client> => {
+  const response = await apiClient.post<Client>('/clients', clientData);
+  return response.data;
+};
+
+export const updateClient = async (id: number, clientData: UpdateClientPayload): Promise<Client> => {
+  const response = await apiClient.patch<Client>(`/clients/${id}`, clientData);
+  return response.data;
+};
+
+export const deleteClient = async (id: number): Promise<void> => {
+  await apiClient.delete(`/clients/${id}`);
+};
+
+// --- Funciones API Products --- 
+
+export const getProducts = async (): Promise<Product[]> => {
+  const response = await apiClient.get<Product[]>('/products');
+  return response.data;
+};
+
+export const createProduct = async (productData: CreateProductPayload): Promise<Product> => {
+  const response = await apiClient.post<Product>('/products', productData);
+  return response.data;
+};
+
+export const updateProduct = async (id: number, productData: UpdateProductPayload): Promise<Product> => {
+  const response = await apiClient.patch<Product>(`/products/${id}`, productData);
+  return response.data;
+};
+
+export const deleteProduct = async (id: number): Promise<void> => {
+  await apiClient.delete(`/products/${id}`);
+};
+
+// Nueva función para obtener un producto con sus detalles (incluyendo relaciones)
+export const getOneProduct = async (id: number): Promise<Product> => {
+  const response = await apiClient.get<Product>(`/products/${id}`); 
+  return response.data;
+};
+
+// --- Funciones API Stock Movements --- 
+
+export const getStockMovements = async (rawMaterialId?: number): Promise<StockMovement[]> => {
+  const params = rawMaterialId ? { rawMaterialId } : {};
+  const response = await apiClient.get<StockMovement[]>('/stock-movements', { params });
+  return response.data;
+};
+
+export const createStockMovement = async (movementData: CreateStockMovementPayload): Promise<StockMovement> => {
+  const response = await apiClient.post<StockMovement>('/stock-movements', movementData);
+  return response.data;
+};
+
+// --- Interceptor de Peticiones Axios para añadir Token JWT --- 
+apiClient.interceptors.request.use(
+  (config) => {
+    // Obtener token de localStorage
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      // Si el token existe, añadirlo a la cabecera Authorization
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config; // Devolver la configuración modificada
+  },
+  (error) => {
+    // Manejar errores de la configuración de la petición
+    return Promise.reject(error);
+  }
+);
+
+// TODO: Podríamos añadir un interceptor de *respuestas* para manejar errores 401 (Unauthorized)
+// globalmente, por ejemplo, redirigiendo al login si el token expira.
 
 export default apiClient; 

@@ -5,10 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
-  ManyToMany,
-  JoinTable,
+  OneToMany,
 } from 'typeorm';
-import { RawMaterial } from '../../raw-materials/entities/raw-material.entity';
+// Eliminar la importación de RawMaterial ya que no se usa directamente aquí
+// import { RawMaterial } from '../../raw-materials/entities/raw-material.entity'; 
+import { ProductComposition } from '../../product-composition/entities/product-composition.entity';
 
 @Entity('products')
 export class Product {
@@ -46,16 +47,12 @@ export class Product {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  // Relación Muchos a Muchos con RawMaterial
-  @ManyToMany(() => RawMaterial, (rawMaterial) => rawMaterial.products, {
-    cascade: false, // No eliminar materias primas si se elimina el producto
+  // Relación con su composición (Lista de Materiales)
+  @OneToMany(() => ProductComposition, (composition) => composition.product, {
+    cascade: true, // Si se crea/actualiza el producto, también su composición
+    eager: true, // Cargar la composición al cargar el producto
   })
-  @JoinTable({ // Define la tabla intermedia (product_raw_materials_raw_material)
-    name: 'product_materials', // Nombre personalizado para la tabla intermedia (opcional)
-    joinColumn: { name: 'product_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'raw_material_id', referencedColumnName: 'id' },
-  })
-  rawMaterials: RawMaterial[];
+  composition: ProductComposition[];
 
   // Aquí podríamos añadir relaciones en el futuro
   // @ManyToOne(() => Category, category => category.products)

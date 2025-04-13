@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, KeyboardEvent, ChangeEvent } from 'react';
 import {
   Button,
   Typography,
@@ -11,11 +11,16 @@ import {
   Input,
   Select,
   InputNumber,
+  InputRef,
 } from 'antd';
+import type { ColumnType, ColumnsType } from 'antd/es/table';
+import type { FilterConfirmProps, FilterDropdownProps } from 'antd/es/table/interface';
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
+  EyeOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 import { RawMaterial, Supplier } from '../types/models';
 import {
@@ -26,9 +31,11 @@ import {
   getSuppliers,
 } from '../services/api';
 import axios from 'axios';
+import Highlighter from 'react-highlight-words';
 
 const { Title } = Typography;
-const { Option } = Select;
+
+type DataIndex = keyof RawMaterial | 'supplier';
 
 const RawMaterialsPage: React.FC = () => {
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
@@ -37,8 +44,102 @@ const RawMaterialsPage: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<RawMaterial | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isViewModalVisible, setIsViewModalVisible] = useState(false);
+  const [viewingMaterial, setViewingMaterial] = useState<RawMaterial | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [searchedColumn, setSearchedColumn] = useState('');
+  const searchInput = useRef<InputRef>(null);
 
   const [form] = Form.useForm();
+
+  const handleSearch = (
+    selectedKeys: string[],
+    confirm: (param?: FilterConfirmProps) => void,
+    dataIndex: DataIndex,
+  ) => {
+    confirm();
+    setSearchText(selectedKeys[0]);
+    setSearchedColumn(dataIndex);
+  };
+
+  const handleReset = (clearFilters: () => void) => {
+    clearFilters();
+    setSearchText('');
+  };
+
+  const getColumnSearchProps = (dataIndex: DataIndex): ColumnType<RawMaterial> => ({
+    filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }: FilterDropdownProps) => (
+      <div style={{ padding: 8 }} onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}>
+        <Input
+          ref={searchInput}
+          placeholder={`Buscar ${dataIndex === 'supplier' ? 'Proveedor' : dataIndex}`}
+          value={selectedKeys[0]}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
+          onPressEnter={() => handleSearch(selectedKeys as string[], confirm, dataIndex)}
+          style={{ marginBottom: 8, display: 'block' }}
+        />
+        <Space>
+          <Button
+            type="primary"
+            onClick={() => handleSearch(selectedKeys as string[], confirm, dataIndex)}
+            icon={<SearchOutlined />}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Buscar
+          </Button>
+          <Button
+            onClick={() => clearFilters && handleReset(clearFilters)}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Resetear
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => close()}
+          >
+            Cerrar
+          </Button>
+        </Space>
+      </div>
+    ),
+    filterIcon: (filtered: boolean) => (
+      <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />
+    ),
+    onFilter: (value, record) => {
+      let recordValue;
+      if (dataIndex === 'supplier') {
+        const supplier = suppliers.find(s => s.id === record.supplierId);
+        recordValue = supplier ? supplier.name : '';
+      } else {
+        recordValue = record[dataIndex as keyof RawMaterial];
+      }
+      return recordValue != null &&
+             recordValue.toString().toLowerCase().includes((value as string).toLowerCase());
+    },
+    onFilterDropdownOpenChange: (visible) => {
+      if (visible) {
+        setTimeout(() => searchInput.current?.select(), 100);
+      }
+    },
+    render: (text, record) => {
+      const currentText = dataIndex === 'supplier' 
+        ? (suppliers.find(s => s.id === record.supplierId)?.name || '-') 
+        : text;
+      return searchedColumn === dataIndex ? (
+        <Highlighter
+          highlightStyle={{ backgroundColor: '#ffc069', padding: 0 }}
+          searchWords={[searchText]}
+          autoEscape
+          textToHighlight={currentText ? currentText.toString() : ''}
+        />
+      ) : (
+        currentText
+      );
+    },
+  });
 
   const fetchData = async () => {
     setLoading(true);
@@ -95,7 +196,7 @@ const RawMaterialsPage: React.FC = () => {
     try {
       const values = await form.validateFields();
       setIsSubmitting(true);
-      const payload = { ...values };
+      const payload = { ...values, supplierId: values.supplierId || null };
       const actionKey = editingMaterial ? 'update' : 'create';
       message.loading({ content: editingMaterial ? 'Actualizando...' : 'Creando...', key: actionKey });
 
@@ -117,12 +218,10 @@ const RawMaterialsPage: React.FC = () => {
       
       if (axios.isAxiosError(error) && error.response?.data?.message) {
         errorMessage = error.response.data.message;
+      } else if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        errorMessage = 'Error en el formulario. Revisa los campos.';
       } else if (error instanceof Error) {
-        if (typeof error === 'object' && error !== null && Object.prototype.hasOwnProperty.call(error, 'errorFields')) {
-          errorMessage = 'Error en el formulario. Revisa los campos.';
-        } else {
-          errorMessage = error.message;
-        }
+        errorMessage = error.message;
       }
       message.error({ content: `Error: ${errorMessage}`, key: editingMaterial ? 'update' : 'create', duration: 4 });
     } finally {
@@ -130,33 +229,69 @@ const RawMaterialsPage: React.FC = () => {
     }
   };
 
-  const columns = [
-    { title: 'Nombre', dataIndex: 'name', key: 'name', sorter: (a: RawMaterial, b: RawMaterial) => a.name.localeCompare(b.name) },
-    { title: 'Descripción', dataIndex: 'description', key: 'description' },
-    { title: 'Unidad', dataIndex: 'unit', key: 'unit' },
-    { title: 'Stock', dataIndex: 'stock', key: 'stock', sorter: (a: RawMaterial, b: RawMaterial) => a.stock - b.stock },
+  const handleViewMaterial = (material: RawMaterial) => {
+    setViewingMaterial(material);
+    setIsViewModalVisible(true);
+  };
+
+  const handleCancelViewModal = () => {
+    setIsViewModalVisible(false);
+    setViewingMaterial(null);
+  };
+
+  const supplierOptions = suppliers.map(supplier => ({
+    value: supplier.id,
+    label: supplier.name,
+  }));
+
+  const columns: ColumnsType<RawMaterial> = [
+    { 
+      title: 'Nombre', 
+      dataIndex: 'name', 
+      key: 'name', 
+      sorter: (a: RawMaterial, b: RawMaterial) => a.name.localeCompare(b.name),
+      ...getColumnSearchProps('name')
+    },
+    { 
+      title: 'Descripción', 
+      dataIndex: 'description', 
+      key: 'description',
+      ...getColumnSearchProps('description')
+    },
+    { 
+      title: 'Unidad', 
+      dataIndex: 'unit', 
+      key: 'unit',
+      ...getColumnSearchProps('unit')
+    },
+    { 
+      title: 'Stock', 
+      dataIndex: 'stock', 
+      key: 'stock', 
+      sorter: (a: RawMaterial, b: RawMaterial) => a.stock - b.stock 
+    },
     {
       title: 'Proveedor',
       dataIndex: 'supplierId',
       key: 'supplier',
-      render: (supplierId: number) => {
-        const supplier = suppliers.find(s => s.id === supplierId);
-        return supplier ? supplier.name : '-';
-      },
+      ...getColumnSearchProps('supplier'),
+      filters: suppliers.map(s => ({ text: s.name, value: s.id })),
+      onFilter: (value, record) => record.supplierId === value,
     },
     {
       title: 'Acciones',
       key: 'actions',
       render: (text: unknown, record: RawMaterial) => (
         <Space size="middle">
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)}>Editar</Button>
+          <Button type="link" icon={<EyeOutlined />} onClick={() => handleViewMaterial(record)} />
+          <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm
             title="¿Estás seguro de eliminar esta materia prima?"
             onConfirm={() => handleDelete(record.id)}
             okText="Sí"
             cancelText="No"
           >
-            <Button danger icon={<DeleteOutlined />}>Eliminar</Button>
+            <Button type="link" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
@@ -176,7 +311,7 @@ const RawMaterialsPage: React.FC = () => {
         dataSource={rawMaterials} 
         rowKey="id" 
         loading={loading} 
-        bordered 
+        bordered
       />
       <Modal
         title={editingMaterial ? 'Editar Materia Prima' : 'Nueva Materia Prima'}
@@ -209,25 +344,61 @@ const RawMaterialsPage: React.FC = () => {
           </Form.Item>
           <Form.Item
             name="stock"
-            label="Stock Inicial"
-            rules={[{ type: 'number', min: 0, message: 'Debe ser 0 o mayor' }]}
+            label="Stock Actual"
+            rules={[{ required: true, message: 'Stock es requerido'}, { type: 'number', min: 0, message: 'Debe ser 0 o mayor' }]}
           >
-            <InputNumber style={{ width: '100%' }} min={0} defaultValue={0}/>
+            <InputNumber style={{ width: '100%' }} min={0} />
           </Form.Item>
           <Form.Item
             name="supplierId"
-            label="Proveedor Principal (Opcional)"
+            label="Proveedor Principal"
           >
-            <Select allowClear placeholder="Selecciona un proveedor">
-              {suppliers.map(supplier => (
-                <Option key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                </Option>
-              ))}
-            </Select>
+            <Select 
+              allowClear 
+              showSearch
+              placeholder="Selecciona o busca un proveedor"
+              optionFilterProp="label"
+              options={supplierOptions}
+              loading={loading}
+              disabled={loading}
+              filterOption={(input: string, option?: { label: string; value: number }) => 
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
           </Form.Item>
         </Form>
       </Modal>
+      {viewingMaterial && (
+        <Modal
+          title={`Detalles de Materia Prima: ${viewingMaterial.name}`}
+          visible={isViewModalVisible}
+          onCancel={handleCancelViewModal}
+          footer={[
+            <Button key="close" onClick={handleCancelViewModal}>
+              Cerrar
+            </Button>,
+          ]}
+          destroyOnClose
+        >
+          <Form layout="vertical">
+            <Form.Item label="Nombre">
+              <Input value={viewingMaterial.name} disabled />
+            </Form.Item>
+            <Form.Item label="Descripción">
+              <Input.TextArea value={viewingMaterial.description || '-'} rows={2} disabled />
+            </Form.Item>
+            <Form.Item label="Unidad de Medida">
+              <Input value={viewingMaterial.unit} disabled />
+            </Form.Item>
+            <Form.Item label="Stock Actual">
+              <InputNumber value={viewingMaterial.stock} style={{ width: '100%' }} disabled />
+            </Form.Item>
+            <Form.Item label="Proveedor Principal">
+              <Input value={suppliers.find(s => s.id === viewingMaterial.supplierId)?.name || 'No asignado'} disabled />
+            </Form.Item>
+          </Form>
+        </Modal>
+      )}
     </div>
   );
 };

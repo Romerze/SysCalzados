@@ -9,6 +9,8 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { RawMaterialsModule } from './raw-materials/raw-materials.module';
 import { ClientsModule } from './clients/clients.module';
 import { ProductsModule } from './products/products.module';
+import { StockMovementsModule } from './stock-movements/stock-movements.module';
+import { ProductCompositionModule } from './product-composition/product-composition.module';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { ProductsModule } from './products/products.module';
     RawMaterialsModule,
     ClientsModule,
     ProductsModule,
+    StockMovementsModule,
+    ProductCompositionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

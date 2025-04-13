@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, KeyboardEvent, ChangeEvent } from 'react';
 import {
   Button,
   Typography,
@@ -9,18 +9,25 @@ import {
   Modal,
   Form,
   Input,
+  InputRef,
 } from 'antd';
+import type { ColumnType, ColumnsType } from 'antd/es/table';
+import type { FilterConfirmProps, FilterDropdownProps } from 'antd/es/table/interface';
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   EyeOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 import { Supplier } from '../types/models';
 import { getSuppliers, deleteSupplier, createSupplier, updateSupplier } from '../services/api';
 import axios from 'axios';
+import Highlighter from 'react-highlight-words';
 
 const { Title } = Typography;
+
+type DataIndex = keyof Supplier;
 
 const SuppliersPage: React.FC = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -30,8 +37,92 @@ const SuppliersPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isViewModalVisible, setIsViewModalVisible] = useState(false);
   const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [searchedColumn, setSearchedColumn] = useState('');
+  const searchInput = useRef<InputRef>(null);
 
   const [form] = Form.useForm();
+
+  const handleSearch = (
+    selectedKeys: string[],
+    confirm: (param?: FilterConfirmProps) => void,
+    dataIndex: DataIndex,
+  ) => {
+    confirm();
+    setSearchText(selectedKeys[0]);
+    setSearchedColumn(dataIndex);
+  };
+
+  const handleReset = (clearFilters: () => void) => {
+    clearFilters();
+    setSearchText('');
+  };
+
+  const getColumnSearchProps = (dataIndex: DataIndex): ColumnType<Supplier> => ({
+    filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }: FilterDropdownProps) => (
+      <div style={{ padding: 8 }} onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}>
+        <Input
+          ref={searchInput}
+          placeholder={`Buscar ${dataIndex}`}
+          value={selectedKeys[0]}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
+          onPressEnter={() => handleSearch(selectedKeys as string[], confirm, dataIndex)}
+          style={{ marginBottom: 8, display: 'block' }}
+        />
+        <Space>
+          <Button
+            type="primary"
+            onClick={() => handleSearch(selectedKeys as string[], confirm, dataIndex)}
+            icon={<SearchOutlined />}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Buscar
+          </Button>
+          <Button
+            onClick={() => clearFilters && handleReset(clearFilters)}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Resetear
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              close();
+            }}
+          >
+            Cerrar
+          </Button>
+        </Space>
+      </div>
+    ),
+    filterIcon: (filtered: boolean) => (
+      <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />
+    ),
+    onFilter: (value, record) => {
+        const recordValue = record[dataIndex];
+        return recordValue != null && 
+               recordValue.toString().toLowerCase().includes((value as string).toLowerCase());
+    },        
+    onFilterDropdownOpenChange: (visible) => {
+      if (visible) {
+        setTimeout(() => searchInput.current?.select(), 100);
+      }
+    },
+    render: (text) =>
+      searchedColumn === dataIndex ? (
+        <Highlighter
+          highlightStyle={{ backgroundColor: '#ffc069', padding: 0 }}
+          searchWords={[searchText]}
+          autoEscape
+          textToHighlight={text ? text.toString() : ''}
+        />
+      ) : (
+        text
+      ),
+  });
 
   const fetchSuppliers = async () => {
     setLoading(true);
@@ -126,33 +217,36 @@ const SuppliersPage: React.FC = () => {
     setViewingSupplier(null);
   };
 
-  const columns = [
-    /*
+  const columns: ColumnsType<Supplier> = [
     { 
-      title: 'ID', 
-      dataIndex: 'id', 
-      key: 'id', 
-      sorter: (a: Supplier, b: Supplier) => a.id - b.id 
+      title: 'Nombre', 
+      dataIndex: 'name', 
+      key: 'name', 
+      sorter: (a: Supplier, b: Supplier) => a.name.localeCompare(b.name),
+      ...getColumnSearchProps('name')
     },
-    */
-    { title: 'Nombre', dataIndex: 'name', key: 'name', sorter: (a: Supplier, b: Supplier) => a.name.localeCompare(b.name) },
     { title: 'Contacto', dataIndex: 'contactPerson', key: 'contactPerson' },
     { title: 'Teléfono', dataIndex: 'phone', key: 'phone' },
-    { title: 'Email', dataIndex: 'email', key: 'email' },
+    { 
+      title: 'Email', 
+      dataIndex: 'email', 
+      key: 'email',
+      ...getColumnSearchProps('email')
+    },
     {
       title: 'Acciones',
       key: 'actions',
       render: (text: unknown, record: Supplier) => (
         <Space size="middle">
-          <Button icon={<EyeOutlined />} onClick={() => handleViewSupplier(record)}>Ver</Button>
-          <Button icon={<EditOutlined />} onClick={() => handleEditSupplier(record)}>Editar</Button>
+          <Button type="link" icon={<EyeOutlined />} onClick={() => handleViewSupplier(record)} />
+          <Button type="link" icon={<EditOutlined />} onClick={() => handleEditSupplier(record)} />
           <Popconfirm
             title="¿Estás seguro de eliminar este proveedor?"
             onConfirm={() => handleDeleteSupplier(record.id)}
             okText="Sí"
             cancelText="No"
           >
-            <Button danger icon={<DeleteOutlined />}>Eliminar</Button>
+            <Button type="link" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
@@ -218,7 +312,6 @@ const SuppliersPage: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* --- Modal Ver Detalles --- */}
       {viewingSupplier && ( 
         <Modal
           title={`Detalles del Proveedor: ${viewingSupplier.name}`}
@@ -232,12 +325,6 @@ const SuppliersPage: React.FC = () => {
           destroyOnClose
         >
           <Form layout="vertical">
-            {/* Eliminar o comentar el Form.Item para el ID */}
-            {/* 
-            <Form.Item label="ID">
-              <Input value={viewingSupplier.id} disabled />
-            </Form.Item>
-            */}
             <Form.Item label="Nombre">
               <Input value={viewingSupplier.name} disabled />
             </Form.Item>
@@ -253,7 +340,6 @@ const SuppliersPage: React.FC = () => {
             <Form.Item label="Dirección">
               <Input.TextArea value={viewingSupplier.address || '-'} rows={3} disabled />
             </Form.Item>
-            {/* Añadir otros campos si existen (createdAt, etc.) */}
           </Form>
         </Modal>
       )}

@@ -10,8 +10,10 @@ import {
   IsArray,
   ArrayMinSize,
   IsInt,
+  ValidateNested, // Añadir para validar objetos anidados
 } from 'class-validator';
-import { Type } from 'class-transformer'; // Necesario para transformar tipos (ej. string a number)
+import { Type } from 'class-transformer'; // Necesario para transformar tipos (ej. string a number) y validar objetos anidados
+import { CompositionItemDto } from './composition-item.dto'; // Importar DTO auxiliar
 
 export class CreateProductDto {
   @IsString()
@@ -57,10 +59,11 @@ export class CreateProductDto {
   @Type(() => Number)
   sellingPrice: number;
 
+  // Añadir campo para la composición
   @IsOptional()
-  @IsArray({ message: 'Las materias primas deben ser un arreglo de IDs' })
-  @ArrayMinSize(1, { message: 'Debe seleccionar al menos una materia prima si se proporciona el campo' })
-  @IsInt({ each: true, message: 'Cada ID de materia prima debe ser un número entero' })
-  @Type(() => Number) // Asegurar que los IDs sean números aunque vengan como strings
-  rawMaterialIds?: number[];
+  @IsArray()
+  @ValidateNested({ each: true }) // Validar cada objeto del array
+  @ArrayMinSize(1) // Si se envía, debe tener al menos un item
+  @Type(() => CompositionItemDto) // Indicar el tipo de objeto del array
+  composition?: CompositionItemDto[];
 } 

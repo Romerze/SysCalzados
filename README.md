@@ -40,15 +40,38 @@ Este proyecto es un sistema de gestión integral diseñado para optimizar los pr
 
 ### Fase 3: Módulos Principales (Ejemplos Iniciales)
 
--   [ ] **Gestión de Inventario (Materias Primas):**
-    -   [ ] Backend: Definir modelos/entidades (Proveedor, MateriaPrima, Compra).
-    -   [ ] Backend: Crear endpoints CRUD para Proveedores y Materias Primas.
-    -   [ ] Frontend: Crear páginas/componentes para listar y gestionar Proveedores/Materias Primas (usando tablas, formularios AntD, etc.).
--   [ ] **Gestión de Clientes:**
-    -   [ ] Backend: Definir modelo/entidad de Cliente.
-    -   [ ] Backend: Crear endpoints CRUD para Clientes.
-    -   [ ] Frontend: Crear páginas/componentes para listar y gestionar Clientes.
--   *... (Añadiremos más módulos aquí: Producto Terminado, Órdenes de Producción, Pedidos, etc.)*
+-   [x] **Gestión de Proveedores:**
+    -   [x] Backend: Definir modelo/entidad de Proveedor.
+    -   [x] Backend: Crear endpoints CRUD para Proveedores.
+    -   [x] Frontend: Crear página/componente para listar y gestionar Proveedores.
+-   [x] **Gestión de Materias Primas:**
+    -   [x] Backend: Definir modelo/entidad de MateriaPrima.
+    -   [x] Backend: Crear endpoints CRUD para Materias Primas.
+    -   [x] Frontend: Crear página/componente para listar y gestionar Materias Primas.
+-   [x] **Gestión de Clientes:**
+    -   [x] Backend: Definir modelo/entidad de Cliente.
+    -   [x] Backend: Crear endpoints CRUD para Clientes.
+    -   [x] Frontend: Crear página/componente para listar y gestionar Clientes.
+-   [x] **Gestión de Productos:**
+    -   [x] Backend: Definir modelo/entidad de Producto.
+    -   [x] Backend: Crear endpoints CRUD para Productos.
+    -   [x] Frontend: Crear página/componente para listar y gestionar Productos.
+-   [x] **Relación Productos - Materias Primas (Composición/BOM):**
+    -   [x] Backend: Crear entidad `ProductComposition` (ID, productId, rawMaterialId, quantity).
+    -   [x] Backend: Actualizar entidades `Product` y `RawMaterial` con relaciones OneToMany.
+    -   [x] Backend: Crear módulo `ProductComposition` (Service, Controller, DTOs).
+    -   [x] Backend: Actualizar `ProductsService` para manejar la creación/actualización de la composición.
+    -   [x] Backend: Generar y ejecutar migración de base de datos.
+    -   [x] Frontend: Actualizar tipos y funciones de API relacionadas con productos.
+    -   [x] Frontend: Refactorizar modal de Productos para usar `Steps`.
+    -   [x] Frontend: Implementar UI en el modal para añadir/eliminar/ver ítems de composición.
+-   [x] **Movimientos de Stock:**
+    -   [x] Backend: Crear entidad y módulo.
+    -   [x] Backend: Implementar lógica para actualizar stock de Materias Primas.
+    -   [x] Backend: Añadir campo `stockAfterMovement` para registrar stock resultante.
+    -   [x] Frontend: Crear página para ver historial y registrar movimientos.
+    -   [x] Frontend: Añadir columna "Stock Resultante" a la tabla.
+-   *... (Añadiremos más módulos aquí: Órdenes de Producción, Pedidos, etc.)*
 
 ### Fase 4: Características Adicionales y Despliegue
 

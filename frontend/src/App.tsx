@@ -3,8 +3,11 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './layouts/MainLayout';
+import ClientsPage from './pages/ClientsPage';
+import ProductsPage from './pages/ProductsPage';
 import SuppliersPage from './pages/SuppliersPage';
 import RawMaterialsPage from './pages/RawMaterialsPage';
+import StockMovementsPage from './pages/StockMovementsPage';
 import './App.css'
 
 // Componente simple para la página principal (Dashboard)
@@ -15,20 +18,12 @@ const DashboardPage = () => (
   </>
 );
 
-// Componente de ejemplo para Clientes
+// Eliminar el componente placeholder de Clientes que ya no se usa
+/*
 const ClientesPage = () => (
   <>
     <h2>Gestión de Clientes</h2>
     <p>Aquí iría la tabla o componentes para gestionar clientes.</p>
-  </>
-);
-
-// Componente placeholder para Materias Primas
-/*
-const RawMaterialsPage = () => (
-  <>
-    <h2>Gestión de Materias Primas</h2>
-    <p>Contenido de gestión de materias primas irá aquí.</p>
   </>
 );
 */
@@ -45,9 +40,11 @@ function App() {
         <Route element={<MainLayout />}>
            {/* Las páginas específicas se renderizan donde está el <Outlet> en MainLayout */}
           <Route path="/" element={<DashboardPage />} />
-          <Route path="/clientes" element={<ClientesPage />} />
+          <Route path="/clientes" element={<ClientsPage />} />
           <Route path="/suppliers" element={<SuppliersPage />} />
           <Route path="/raw-materials" element={<RawMaterialsPage />} />
+          <Route path="/productos" element={<ProductsPage />} />
+          <Route path="/stock-movements" element={<StockMovementsPage />} />
           {/* Añadir más rutas protegidas aquí (ej. /inventario, /produccion) */}
         </Route>
       </Route>

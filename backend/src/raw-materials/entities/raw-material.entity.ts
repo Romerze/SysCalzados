@@ -5,9 +5,9 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
-  ManyToMany,
+  OneToMany,
 } from 'typeorm';
-import { Product } from '../../products/entities/product.entity';
+import { ProductComposition } from '../../product-composition/entities/product-composition.entity';
 
 @Entity('raw_materials')
 export class RawMaterial {
@@ -33,6 +33,11 @@ export class RawMaterial {
   @Column({ nullable: true })
   supplierId?: number;
 
-  @ManyToMany(() => Product, (product) => product.rawMaterials)
-  products: Product[];
+  @OneToMany(() => ProductComposition, (composition) => composition.rawMaterial)
+  productCompositions: ProductComposition[];
+
+  // La relación ManyToMany con Product ya no es necesaria desde Product
+  // pero la dejamos aquí comentada por si acaso o la eliminamos
+  // @ManyToMany(() => Product, (product) => product.rawMaterials)
+  // products: Product[];
 } 
