@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './layouts/MainLayout';
+import SuppliersPage from './pages/SuppliersPage';
 import './App.css'
 
 // Componente simple para la página principal (Dashboard)
@@ -21,6 +22,14 @@ const ClientesPage = () => (
   </>
 );
 
+// Componente placeholder para Materias Primas
+const RawMaterialsPage = () => (
+  <>
+    <h2>Gestión de Materias Primas</h2>
+    <p>Contenido de gestión de materias primas irá aquí.</p>
+  </>
+);
+
 function App() {
   return (
     <Routes>
@@ -34,6 +43,8 @@ function App() {
            {/* Las páginas específicas se renderizan donde está el <Outlet> en MainLayout */}
           <Route path="/" element={<DashboardPage />} />
           <Route path="/clientes" element={<ClientesPage />} />
+          <Route path="/suppliers" element={<SuppliersPage />} />
+          <Route path="/raw-materials" element={<RawMaterialsPage />} />
           {/* Añadir más rutas protegidas aquí (ej. /inventario, /produccion) */}
         </Route>
       </Route>

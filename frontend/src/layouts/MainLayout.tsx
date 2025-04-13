@@ -12,6 +12,8 @@ import {
   HomeOutlined,
   UserOutlined, // Ejemplo
   LogoutOutlined, // Para botón Logout
+  ShopOutlined, // Icono para Proveedores
+  GoldOutlined, // Icono para Materias Primas
 } from '@ant-design/icons';
 import { Outlet, useNavigate, Link } from 'react-router-dom'; // Importar Outlet, useNavigate, Link
 
@@ -43,6 +45,16 @@ const MainLayout: React.FC = () => {
       icon: <UserOutlined />,
       label: <Link to="/clientes">Clientes</Link>, // Ruta de ejemplo
     },
+    {
+      key: '3', // Nueva Key
+      icon: <ShopOutlined />,
+      label: <Link to="/suppliers">Proveedores</Link>, // Nuevo item
+    },
+    {
+      key: '4', // Nueva Key
+      icon: <GoldOutlined />,
+      label: <Link to="/raw-materials">Materias Primas</Link>, // Nuevo item
+    },
     // Añadir más ítems aquí (Inventario, Producción, etc.)
   ];
 
@@ -52,7 +64,7 @@ const MainLayout: React.FC = () => {
         <div style={{ height: '32px', margin: '16px', background: 'rgba(255, 255, 255, 0.3)', textAlign: 'center', lineHeight: '32px', color: 'white', fontWeight: 'bold' }}>
           {collapsed ? 'SC' : 'SystemCalzados'}
         </div>
-        <Menu theme="dark" mode="inline" defaultSelectedKeys={['1']} items={menuItems} />
+        <Menu theme="dark" mode="inline" defaultSelectedKeys={['1']} items={menuItems} key={Date.now()} />
       </Sider>
       <Layout>
         <Header style={{ padding: 0, background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
