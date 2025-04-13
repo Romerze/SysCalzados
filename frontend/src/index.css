@@ -24,10 +24,16 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  width: 100%;
+  height: 100%;
+  background-color: var(--body-bg, #242424);
+}
+
+#root {
+  width: 100%;
+  height: 100%;
 }
 
 h1 {
@@ -58,6 +64,10 @@ button:focus-visible {
   :root {
     color: #213547;
     background-color: #ffffff;
+    --body-bg: #ffffff;
+  }
+  body {
+    background-color: var(--body-bg);
   }
   a:hover {
     color: #747bff;

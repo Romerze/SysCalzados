@@ -26,17 +26,17 @@ Este proyecto es un sistema de gestión integral diseñado para optimizar los pr
     -   [x] Configurar TypeORM (o el ORM elegido) para interactuar con la BD.
 -   [ ] **Infraestructura (Opcional Inicial):**
     -   [ ] Configurar Docker para Frontend y Backend.
-    -   [ ] Configurar un repositorio Git.
+    -   [x] Configurar un repositorio Git.
 
 ### Fase 2: Módulo de Autenticación y Usuarios
 
 -   [x] Backend: Definir modelo/entidad de Usuario.
--   [ ] Backend: Implementar lógica de registro y login (ej. con JWT).
+-   [x] Backend: Implementar lógica de registro y login (ej. con JWT).
 -   [ ] Backend: Crear endpoints para autenticación y gestión básica de usuarios.
--   [ ] Frontend: Crear páginas de Login y Registro usando componentes AntD.
--   [ ] Frontend: Implementar lógica para llamar a los endpoints de autenticación.
--   [ ] Frontend: Implementar rutas protegidas.
--   [ ] Frontend: Crear un layout base para la aplicación autenticada (con menú/sidebar AntD).
+-   [x] Frontend: Crear páginas de Login y Registro usando componentes AntD.
+-   [x] Frontend: Implementar lógica para llamar a los endpoints de autenticación.
+-   [x] Frontend: Implementar rutas protegidas.
+-   [x] Frontend: Crear un layout base para la aplicación autenticada (con menú/sidebar AntD).
 
 ### Fase 3: Módulos Principales (Ejemplos Iniciales)
 
