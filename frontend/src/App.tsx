@@ -4,6 +4,7 @@ import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './layouts/MainLayout';
 import SuppliersPage from './pages/SuppliersPage';
+import RawMaterialsPage from './pages/RawMaterialsPage';
 import './App.css'
 
 // Componente simple para la página principal (Dashboard)
@@ -23,12 +24,14 @@ const ClientesPage = () => (
 );
 
 // Componente placeholder para Materias Primas
+/*
 const RawMaterialsPage = () => (
   <>
     <h2>Gestión de Materias Primas</h2>
     <p>Contenido de gestión de materias primas irá aquí.</p>
   </>
 );
+*/
 
 function App() {
   return (
