@@ -14,5 +14,6 @@ import { ProductCompositionModule } from '../product-composition/product-composi
   ],
   controllers: [ProductsController],
   providers: [ProductsService],
+  exports: [ProductsService],
 })
 export class ProductsModule {}

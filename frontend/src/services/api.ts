@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { LoginFormValues, RegisterFormValues } from '../types/formTypes';
-import { Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem } from '../types/models'; // Importar tipo Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem
+import { Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem, ProductionOrder, ProductionOrderStatus } from '../types/models'; // Importar tipo Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem, ProductionOrder, ProductionOrderStatus
 
 // Crear instancia de Axios con la URL base del backend
 const apiClient = axios.create({
@@ -47,6 +47,18 @@ type CreateStockMovementPayload = {
   rawMaterialId: number;
   type: MovementType;
   quantity: number;
+  notes?: string;
+};
+
+// Tipos para Production Order DTOs
+type CreateProductionOrderPayload = {
+  productId: number;
+  quantityToProduce: number;
+  orderNumber?: string;
+  notes?: string;
+};
+type UpdateProductionOrderPayload = { // Para cambiar estado o notas
+  status?: ProductionOrderStatus;
   notes?: string;
 };
 
@@ -171,6 +183,33 @@ export const getStockMovements = async (rawMaterialId?: number): Promise<StockMo
 export const createStockMovement = async (movementData: CreateStockMovementPayload): Promise<StockMovement> => {
   const response = await apiClient.post<StockMovement>('/stock-movements', movementData);
   return response.data;
+};
+
+// --- Funciones API Production Orders --- 
+
+export const getProductionOrders = async (): Promise<ProductionOrder[]> => {
+  const response = await apiClient.get<ProductionOrder[]>('/production-orders');
+  return response.data;
+};
+
+export const getOneProductionOrder = async (id: number): Promise<ProductionOrder> => {
+  const response = await apiClient.get<ProductionOrder>(`/production-orders/${id}`);
+  return response.data;
+};
+
+export const createProductionOrder = async (orderData: CreateProductionOrderPayload): Promise<ProductionOrder> => {
+  const response = await apiClient.post<ProductionOrder>('/production-orders', orderData);
+  return response.data;
+};
+
+// Función específica para actualizar estado/notas
+export const updateProductionOrder = async (id: number, updateData: UpdateProductionOrderPayload): Promise<ProductionOrder> => {
+  const response = await apiClient.patch<ProductionOrder>(`/production-orders/${id}`, updateData);
+  return response.data;
+};
+
+export const deleteProductionOrder = async (id: number): Promise<void> => {
+  await apiClient.delete(`/production-orders/${id}`);
 };
 
 // --- Interceptor de Peticiones Axios para añadir Token JWT --- 

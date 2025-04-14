@@ -80,4 +80,26 @@ export interface StockMovement {
   rawMaterialId: number;
   rawMaterial?: RawMaterial; // Para incluir datos básicos al listar
   stockAfterMovement?: number; // Stock resultante después del movimiento
+}
+
+// Enum para Estado de Orden de Producción
+export enum ProductionOrderStatus {
+  PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+// Interfaz para Orden de Producción
+export interface ProductionOrder {
+  id: number;
+  orderNumber?: string; // Puede ser null si no se generó aún
+  productId: number;
+  product: Product; // Asumiendo que la API carga esto
+  quantityToProduce: number;
+  status: ProductionOrderStatus;
+  notes?: string;
+  createdAt: string; // ISO String
+  startedAt?: string; // ISO String
+  completedAt?: string; // ISO String
 } 

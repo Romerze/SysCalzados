@@ -56,6 +56,7 @@ Este proyecto es un sistema de gestión integral diseñado para optimizar los pr
     -   [x] Backend: Definir modelo/entidad de Producto.
     -   [x] Backend: Crear endpoints CRUD para Productos.
     -   [x] Frontend: Crear página/componente para listar y gestionar Productos.
+    -   [x] Frontend: Implementar agrupación de productos por modelo y vista expandible para variantes.
 -   [x] **Relación Productos - Materias Primas (Composición/BOM):**
     -   [x] Backend: Crear entidad `ProductComposition` (ID, productId, rawMaterialId, quantity).
     -   [x] Backend: Actualizar entidades `Product` y `RawMaterial` con relaciones OneToMany.

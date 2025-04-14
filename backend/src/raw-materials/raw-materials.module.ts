@@ -9,6 +9,6 @@ import { RawMaterialsController } from './raw-materials.controller';
   providers: [RawMaterialsService],
   controllers: [RawMaterialsController],
   // controllers y providers se añadirán aquí
-  exports: [TypeOrmModule]
+  exports: [RawMaterialsService],
 })
 export class RawMaterialsModule {}

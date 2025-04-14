@@ -9,33 +9,31 @@ import {
   Modal,
   Form,
   Input,
-  InputNumber, // Añadir InputNumber para precios y stock
+  InputNumber,
   InputRef,
-  List, // Importar List para mostrar composición
+  List,
   Select,
-  Steps, // Importar Steps
+  Steps,
 } from 'antd';
-import type { ColumnType, ColumnsType } from 'antd/es/table';
+import type { ColumnsType } from 'antd/es/table';
 import type { FilterConfirmProps, FilterDropdownProps } from 'antd/es/table/interface';
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  EyeOutlined,
   SearchOutlined,
+  MinusCircleOutlined,
 } from '@ant-design/icons';
-// Importar tipo Product y funciones API
 import { Product, RawMaterial } from '../types/models';
-import { 
-  getProducts, deleteProduct, createProduct, updateProduct, 
-  getRawMaterials, getOneProduct, 
+import {
+  getProducts, deleteProduct, createProduct,
+  getRawMaterials,
 } from '../services/api';
 import axios from 'axios';
 import Highlighter from 'react-highlight-words';
 
 const { Title } = Typography;
 
-// Definir tipos de Payload localmente
 type CompositionItemPayload = {
   rawMaterialId: number;
   quantity: number;
@@ -43,44 +41,51 @@ type CompositionItemPayload = {
 type CreateProductPayload = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'composition'> & {
   composition?: CompositionItemPayload[];
 };
-type UpdateProductPayload = Partial<Omit<CreateProductPayload, 'code'>> & { // Código no suele ser actualizable
-  code?: string; // Permitir actualizar código, pero manejarlo con cuidado
-  composition?: CompositionItemPayload[]; // Permitir actualizar composición
-};
 
-type DataIndex = keyof Product; 
+// Define interface for variant form data
+interface VariantFormData {
+  size: string;
+  color: string;
+  code: string;
+  sellingPrice: number | null;
+  purchasePrice?: number | null;
+  stock: number;
+}
+
+// Interface for the grouped product model view
+interface ProductModelView {
+  key: string; // Use name as key
+  name: string;
+  description?: string; 
+  variants: Product[]; 
+}
 
 const ProductsPage: React.FC = () => {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductModelView[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isViewModalVisible, setIsViewModalVisible] = useState(false);
-  const [viewingProduct, setViewingProduct] = useState<Product | null>(null); 
   const [searchText, setSearchText] = useState('');
   const [searchedColumn, setSearchedColumn] = useState('');
   const searchInput = useRef<InputRef>(null);
-  // Estado para materias primas disponibles
   const [availableRawMaterials, setAvailableRawMaterials] = useState<RawMaterial[]>([]); 
-  // Usar CompositionItemState para el estado local
   const [currentComposition, setCurrentComposition] = useState<CompositionItemPayload[]>([]); 
   const [selectedRawMaterialId, setSelectedRawMaterialId] = useState<number | undefined>(undefined);
   const [selectedQuantity, setSelectedQuantity] = useState<number | null>(1);
-  // Nuevo estado para el paso actual
   const [currentStep, setCurrentStep] = useState(0);
 
   const [form] = Form.useForm();
+  const [modal, contextHolder] = Modal.useModal();
 
-  // --- Funciones de Búsqueda/Filtro --- 
+  // Simplify handleSearch - it only needs the string value
   const handleSearch = (
     selectedKeys: string[],
     confirm: (param?: FilterConfirmProps) => void,
-    dataIndex: DataIndex,
+    dataIndex: string, // Expect string dataIndex here
   ) => {
     confirm();
     setSearchText(selectedKeys[0]);
-    setSearchedColumn(dataIndex);
+    setSearchedColumn(dataIndex); // Set string directly
   };
 
   const handleReset = (clearFilters: () => void) => {
@@ -88,21 +93,22 @@ const ProductsPage: React.FC = () => {
     setSearchText('');
   };
 
-  const getColumnSearchProps = (dataIndex: DataIndex): ColumnType<Product> => ({
+  // Change generic constraint to be more specific
+  const getColumnSearchProps = <T extends ProductModelView | Product>(dataIndex: keyof T): ColumnsType<T>[number] => ({
     filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }: FilterDropdownProps) => (
       <div style={{ padding: 8 }} onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}>
         <Input
           ref={searchInput}
-          placeholder={`Buscar por ${dataIndex}`}
+          placeholder={`Buscar por ${String(dataIndex)}`}
           value={selectedKeys[0]}
           onChange={(e: ChangeEvent<HTMLInputElement>) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-          onPressEnter={() => handleSearch(selectedKeys as string[], confirm, dataIndex)}
+          onPressEnter={() => handleSearch(selectedKeys as string[], confirm, String(dataIndex))}
           style={{ marginBottom: 8, display: 'block' }}
         />
         <Space>
           <Button
             type="primary"
-            onClick={() => handleSearch(selectedKeys as string[], confirm, dataIndex)}
+            onClick={() => handleSearch(selectedKeys as string[], confirm, String(dataIndex))}
             icon={<SearchOutlined />}
             size="small"
             style={{ width: 90 }}
@@ -129,46 +135,48 @@ const ProductsPage: React.FC = () => {
     filterIcon: (filtered: boolean) => (
       <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />
     ),
-    onFilter: (value, record) => {
+    onFilter: (value: React.Key | boolean, record: T) => {
+        if (typeof value === 'boolean') {
+            return true; 
+        }
         const recordValue = record[dataIndex];
-        return recordValue != null &&
-               recordValue.toString().toLowerCase().includes((value as string).toLowerCase());
+        const recordValueString = recordValue !== null && recordValue !== undefined ? String(recordValue) : '';
+        return recordValueString.toLowerCase().includes(String(value).toLowerCase());
     },      
     onFilterDropdownOpenChange: (visible: boolean) => { 
       if (visible) {
         setTimeout(() => searchInput.current?.select(), 100);
       }
     },
-    render: (text) => {
-        // Formatear precios para mostrar con 2 decimales
-        if (dataIndex === 'sellingPrice' || dataIndex === 'purchasePrice') {
-            const numberValue = typeof text === 'number' ? text : parseFloat(text);
-            return numberValue ? `S/ ${numberValue.toFixed(2)}` : '-'; // Mostrar con símbolo de Soles
-        }
-        return searchedColumn === dataIndex ? (
-            <Highlighter
-              highlightStyle={{ backgroundColor: '#ffc069', padding: 0 }}
-              searchWords={[searchText]}
-              autoEscape
-              textToHighlight={text ? text.toString() : ''}
-            />
-        ) : (
-            text
-        );
-    }
-  });
-  // --- Fin Funciones de Búsqueda/Filtro ---
+  }) as ColumnsType<T>[number]; // Assert as a single column type element
 
-  // --- Fetch Data --- 
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Cargar productos y materias primas en paralelo
       const [productsData, rawMaterialsData] = await Promise.all([
         getProducts(),
         getRawMaterials(),
       ]);
-      setProducts(productsData);
+
+      // Group products by name to create model views
+      const groupedProducts = productsData.reduce((acc, product) => {
+        const modelName = product.name; // Group by name
+        if (!acc[modelName]) {
+          acc[modelName] = {
+            key: modelName, // Use name as key for simplicity
+            name: modelName,
+            description: product.description, // Assume description is same for model
+            variants: [],
+          };
+        }
+        acc[modelName].variants.push(product);
+        return acc;
+      }, {} as Record<string, ProductModelView>);
+
+      // Convert grouped object back to an array for the table
+      const modelViewData = Object.values(groupedProducts);
+
+      setProducts(modelViewData); // Now products state holds ProductModelView[]
       setAvailableRawMaterials(rawMaterialsData);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -179,135 +187,163 @@ const ProductsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData(); // Llamar a la nueva función fetchData
+    fetchData();
   }, []);
 
   const handleAdd = () => {
-    setEditingProduct(null);
     form.resetFields();
-    form.setFieldsValue({ stock: 0 }); // Inicializar otros campos si es necesario
-    setCurrentComposition([]); // Inicializar composición vacía
+    setCurrentComposition([]);
+    setSelectedRawMaterialId(undefined);
+    setSelectedQuantity(1);
+    setCurrentStep(0);
     setIsModalVisible(true);
   };
 
-  const handleEdit = async (product: Product) => {
-    setLoading(true); 
-    try {
-      const productWithDetails = await getOneProduct(product.id);
-      setEditingProduct(productWithDetails);
-      
-      // Preparar la composición actual para el estado (solo id y quantity)
-      const initialComposition = productWithDetails.composition?.map(item => ({
-        rawMaterialId: item.rawMaterialId,
-        quantity: Number(item.quantity) // Asegurarse que quantity es número
-      })) || [];
-      setCurrentComposition(initialComposition);
-
-      form.setFieldsValue({ 
-        ...productWithDetails,
-        sellingPrice: Number(productWithDetails.sellingPrice),
-        purchasePrice: productWithDetails.purchasePrice ? Number(productWithDetails.purchasePrice) : undefined,
-      });
-      setIsModalVisible(true);
-    } catch (error) {
-       console.error("Error fetching product details for edit:", error);
-       message.error("Error al cargar detalles del producto para editar");
-    } finally {
-        setLoading(false);
-    }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleEdit = (_product: Product) => {
+    message.info('La edición detallada se implementará en una futura versión. Use la creación por ahora.');
   };
 
   const handleCancelModal = () => {
     setIsModalVisible(false);
-    setEditingProduct(null);
-    setCurrentComposition([]); // Limpiar composición al cancelar
-    setCurrentStep(0); // Resetear al paso 0
     form.resetFields();
+    setCurrentComposition([]);
+    setCurrentStep(0);
   };
 
-  const handleDelete = async (id: number) => {
-    message.loading({ content: 'Eliminando...', key: `delete-${id}` });
-    try {
-      await deleteProduct(id);
-      message.success({ content: 'Producto eliminado', key: `delete-${id}`, duration: 2 });
-      fetchData();
-    } catch (error) {
-      console.error('Error deleting product:', error);
-      message.error({ content: 'Error al eliminar el producto', key: `delete-${id}`, duration: 3 });
-    }
+  const handleDelete = (id: number) => {
+    modal.confirm({
+      title: '¿Estás seguro de eliminar este producto?',
+      content: 'Esta acción no se puede deshacer.',
+      okText: 'Sí, eliminar',
+      okType: 'danger',
+      cancelText: 'No, cancelar',
+      onOk: async () => {
+        try {
+          await deleteProduct(id);
+          message.success('Producto eliminado con éxito');
+          fetchData();
+        } catch (error) {
+          console.error("Error deleting product:", error);
+          message.error('Error al eliminar el producto');
+        }
+      },
+    });
   };
 
   const handleModalSubmit = async () => {
+    const actionKey = 'createMultiple';
     try {
-      const values = form.getFieldsValue(true); // Obtener todos los valores
-      setIsSubmitting(true);
-      const basePayload = { 
-         ...values,
-         stock: Number(values.stock ?? 0),
-         sellingPrice: Number(values.sellingPrice),
-         purchasePrice: values.purchasePrice ? Number(values.purchasePrice) : undefined,
-      };
-      delete basePayload.rawMaterialIds; 
+      const values = await form.validateFields(); 
       
-      let finalPayload: CreateProductPayload | UpdateProductPayload;
-      if (editingProduct) {
-        finalPayload = { ...basePayload, composition: currentComposition } as UpdateProductPayload; 
-      } else {
-        finalPayload = { ...basePayload, composition: currentComposition } as CreateProductPayload;
+      if (currentComposition.length === 0) {
+        message.error({ content: 'Debe añadir al menos una materia prima a la composición.', key: actionKey });
+        return;
       }
-      const actionKey = editingProduct ? 'update' : 'create';
-      message.loading({ content: editingProduct ? 'Actualizando...' : 'Creando...', key: actionKey });
-      if (editingProduct) {
-        await updateProduct(editingProduct.id, finalPayload as UpdateProductPayload);
-        message.success({ content: 'Producto actualizado', key: actionKey, duration: 2 });
-      } else {
-        await createProduct(finalPayload as CreateProductPayload);
-        message.success({ content: 'Producto creado', key: actionKey, duration: 2 });
-      }
+
+      setIsSubmitting(true);
+      message.loading({ content: 'Creando variantes...', key: actionKey });
+
+      const { name, description, variants } = values;
+
+      const creationPromises = variants.map((variant: VariantFormData) => {
+        const payloadForVariant: CreateProductPayload = {
+          name: name,
+          description: description,
+          code: variant.code,
+          size: variant.size,
+          color: variant.color,
+          stock: Number(variant.stock ?? 0),
+          sellingPrice: Number(variant.sellingPrice),
+          purchasePrice: variant.purchasePrice ? Number(variant.purchasePrice) : undefined,
+          composition: currentComposition,
+        };
+        return createProduct(payloadForVariant);
+      });
+
+      await Promise.all(creationPromises);
+
+      message.success({ content: `Se crearon ${variants.length} variantes del producto`, key: actionKey, duration: 3 });
+      
       setIsModalVisible(false);
-      setEditingProduct(null);
       setCurrentComposition([]);
-      setCurrentStep(0); // Resetear al paso 0
+      setCurrentStep(0);
       form.resetFields();
       fetchData();
+
     } catch (error: unknown) {
       console.error('Form submission error:', error);
-      let errorMessage = editingProduct ? 'Error al actualizar' : 'Error al crear';
+      let errorMessage = 'Error al crear variantes';
       if (axios.isAxiosError(error) && error.response?.data) {
         if (error.response.status === 409 && error.response.data.message) {
           errorMessage = error.response.data.message;
         } else if (error.response.data.message) {
           if (Array.isArray(error.response.data.message)) {
-            errorMessage = error.response.data.message.join(', ');
+            errorMessage = error.response.data.message.join('; '); 
           } else {
              errorMessage = error.response.data.message;
           }
+        } else if (error.response.data.error) {
+             errorMessage = `Error del servidor: ${error.response.data.error}`;
         }
       } else if (typeof error === 'object' && error !== null && 'errorFields' in error) { 
-         errorMessage = "Por favor, corrija los errores en el formulario.";
+         errorMessage = "Error de validación en el formulario. Revise los campos.";
       } 
-      message.error({ content: errorMessage, key: editingProduct ? 'update' : 'create', duration: 4 });
+      message.error({ content: errorMessage, key: actionKey + '_error', duration: 5 });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleView = async (product: Product) => {
-    setLoading(true); // Indicar carga
-    try {
-      // Llamar a getOneProduct para obtener detalles completos
-      const productWithDetails = await getOneProduct(product.id);
-      setViewingProduct(productWithDetails); // Usar datos completos
-      setIsViewModalVisible(true);
-    } catch (error) {
-      console.error("Error fetching product details for view:", error);
-      message.error("Error al cargar detalles del producto");
-    } finally {
-      setLoading(false);
+  const handleNext = async () => {
+    if (currentStep === 0) {
+      try {
+        await form.validateFields(['name', 'code']);
+        setCurrentStep(prev => prev + 1);
+      } catch (errorInfo) {
+        console.log('Validation Failed (Step 0):', errorInfo);
+        message.warning('Por favor, complete los campos requeridos del modelo base.');
+      }
+    } else if (currentStep === 1) {
+      try {
+        await form.validateFields(['variants']); 
+        const variants = form.getFieldValue('variants') || [];
+        if (variants.length === 0) {
+           message.warning('Debe añadir al menos una variante de producto.');
+           return;
+        }
+        // Use the defined interface for variants
+        const hasIncompleteVariant = variants.some((variant: VariantFormData | undefined | null) => 
+          !variant || !variant.size || !variant.color || !variant.code || variant.sellingPrice === null || variant.sellingPrice === undefined
+        );
+        if (hasIncompleteVariant) {
+           message.warning('Por favor, complete todos los campos requeridos para cada variante.');
+           return;
+        }
+        setCurrentStep(prev => prev + 1);
+      } catch (errorInfo) {
+        console.log('Validation Failed (Step 1):', errorInfo);
+        if (errorInfo && typeof errorInfo === 'object' && 'errorFields' in errorInfo) {
+            const validationError = errorInfo as { errorFields: { name: (string | number)[] }[] }; 
+            if (Array.isArray(validationError.errorFields)) {
+              const variantErrors = validationError.errorFields.filter((field: { name: (string | number)[] }) => 
+                Array.isArray(field.name) && field.name[0] === 'variants'
+              );
+              if (variantErrors.length > 0) {
+                   message.warning('Por favor, corrija los errores en las variantes.');
+                   return;
+              }
+            }
+        }
+        message.warning('Error al validar variantes.');
+      }
     }
   };
 
-  // --- Lógica para manejar composición --- 
+  const handlePrev = () => {
+    setCurrentStep(prev => prev - 1);
+  };
+
   const handleAddCompositionItem = () => {
     if (selectedRawMaterialId !== undefined && selectedQuantity !== null && selectedQuantity > 0) {
       const existingIndex = currentComposition.findIndex(item => item.rawMaterialId === selectedRawMaterialId);
@@ -330,11 +366,14 @@ const ProductsPage: React.FC = () => {
     setCurrentComposition(prev => prev.filter(item => item.rawMaterialId !== rawMaterialIdToRemove));
   };
 
-  // --- Definición de Pasos --- 
   const steps = [
     {
-      title: 'Información Básica',
-      content: 'step1-content', // Usaremos esto como clave para renderizado condicional
+      title: 'Modelo',
+      content: 'step0-content',
+    },
+    {
+      title: 'Variantes',
+      content: 'step1-content',
     },
     {
       title: 'Composición',
@@ -342,89 +381,139 @@ const ProductsPage: React.FC = () => {
     },
   ];
 
-  // --- Funciones Navegación Steps ---
-  const handleNext = async () => {
-    if (currentStep === 0) {
-      try {
-        // Validar solo los campos del paso 1
-        await form.validateFields(['name', 'code', 'size', 'color', 'sellingPrice']); // Añadir otros si son requeridos
-        setCurrentStep(prev => prev + 1);
-      } catch (errorInfo) {
-        console.log('Validation Failed:', errorInfo);
-        message.warning('Por favor, complete los campos requeridos del paso actual.');
-      }
-    }
+  // Add Highlighter logic specifically where needed
+  const renderHighlightedText = (text: string | number | undefined | null) => {
+      const textString = text ? String(text) : '';
+      return searchedColumn === 'name' || searchedColumn === 'description' || searchedColumn === 'key' || searchedColumn === 'code' || searchedColumn === 'size' || searchedColumn === 'color' ? (
+          <Highlighter
+              highlightStyle={{ backgroundColor: '#ffc069', padding: 0 }}
+              searchWords={[searchText]}
+              autoEscape
+              textToHighlight={textString}
+          />
+      ) : (
+          textString || '-'
+      );
   };
 
-  const handlePrev = () => {
-    setCurrentStep(prev => prev - 1);
-  };
-
-  // Definición de columnas para la tabla de Productos
-  const columns: ColumnsType<Product> = [
+  const columns: ColumnsType<ProductModelView> = [
     { 
       title: 'Código', 
-      dataIndex: 'code', 
-      key: 'code',
-      ...getColumnSearchProps('code') 
+      dataIndex: 'key', 
+      key: 'key',
+      ...getColumnSearchProps<ProductModelView>('key'),
+      render: (text) => renderHighlightedText(text) // Apply highlighter here
     },
     { 
       title: 'Nombre', 
       dataIndex: 'name', 
       key: 'name', 
-      sorter: (a: Product, b: Product) => a.name.localeCompare(b.name),
-      ...getColumnSearchProps('name') 
+      sorter: (a: ProductModelView, b: ProductModelView) => a.name.localeCompare(b.name),
+      ...getColumnSearchProps<ProductModelView>('name'),
+      render: (text) => renderHighlightedText(text) // Apply highlighter here
     },
      { 
-      title: 'Talla', 
-      dataIndex: 'size', 
-      key: 'size',
-      ...getColumnSearchProps('size') 
-    },
-     { 
-      title: 'Color', 
-      dataIndex: 'color', 
-      key: 'color',
-      ...getColumnSearchProps('color') 
-    },
-     { 
-      title: 'Stock', 
-      dataIndex: 'stock', 
-      key: 'stock',
-      sorter: (a: Product, b: Product) => a.stock - b.stock,
-      align: 'right' // Alinear stock a la derecha
+      title: 'Descripción', 
+      dataIndex: 'description', 
+      key: 'description',
+      ...getColumnSearchProps<ProductModelView>('description'),
+      render: (text) => renderHighlightedText(text) // Apply highlighter here
     },
     {
-      title: 'P. Venta', 
-      dataIndex: 'sellingPrice',
-      key: 'sellingPrice',
-      sorter: (a: Product, b: Product) => a.sellingPrice - b.sellingPrice,
-      align: 'right',
-      render: (price: number) => `S/ ${Number(price).toFixed(2)}` // Formatear en render
+      title: 'Nº Variantes',
+      dataIndex: 'variants',
+      key: 'numVariants',
+      align: 'center',
+      render: (variants: Product[]) => variants.length,
     },
     {
       title: 'Acciones',
       key: 'actions',
       align: 'center',
-      render: (text: unknown, record: Product) => (
+      render: (text: unknown, record: ProductModelView) => (
         <Space size="middle">
-          <Button type="link" icon={<EyeOutlined />} onClick={() => handleView(record)} />
-          <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+          <Button type="link" icon={<EditOutlined />} disabled title="Edición a nivel de modelo no implementada" />
           <Popconfirm
-            title="¿Estás seguro de eliminar este producto?"
-            onConfirm={() => handleDelete(record.id)}
-            okText="Sí"
+            title={`¿Eliminar el modelo '${record.name}' y todas sus ${record.variants.length} variantes?`}
+            onConfirm={() => handleDeleteModel(record)}
+            okText="Sí, eliminar todo"
             cancelText="No"
+            disabled
           >
-            <Button type="link" danger icon={<DeleteOutlined />} />
+            <Button type="link" danger icon={<DeleteOutlined />} disabled />
           </Popconfirm>
         </Space>
       ),
     },
   ];
 
+  // Define columns for the nested variants table
+  const variantColumns: ColumnsType<Product> = [
+    { title: 'SKU', dataIndex: 'code', key: 'code', ...getColumnSearchProps<Product>('code'), render: (text) => renderHighlightedText(text) }, // Apply highlighter
+    { title: 'Talla', dataIndex: 'size', key: 'size', ...getColumnSearchProps<Product>('size'), render: (text) => renderHighlightedText(text) }, // Apply highlighter
+    { title: 'Color', dataIndex: 'color', key: 'color', ...getColumnSearchProps<Product>('color'), render: (text) => renderHighlightedText(text) }, // Apply highlighter
+    { title: 'Stock', dataIndex: 'stock', key: 'stock', align: 'right' }, // No highlight needed
+    {
+      title: 'P. Venta',
+      dataIndex: 'sellingPrice',
+      key: 'sellingPrice',
+      align: 'right',
+      render: (price: number) => `S/ ${Number(price).toFixed(2)}`,
+    },
+    {
+      title: 'P. Costo',
+      dataIndex: 'purchasePrice',
+      key: 'purchasePrice',
+      align: 'right',
+      render: (price: number | null) => price ? `S/ ${Number(price).toFixed(2)}` : '-',
+    },
+    {
+      title: 'Acciones Variante',
+      key: 'variantActions',
+      align: 'center',
+      render: (text: unknown, record: Product) => (
+        <Space size="small"> 
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} title="Editar esta variante"/>
+          <Popconfirm
+            title="¿Eliminar esta variante específica?"
+            onConfirm={() => handleDelete(record.id)}
+            okText="Sí"
+            cancelText="No"
+          >
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} title="Eliminar esta variante"/>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  // Define the expanded row render function
+  const expandedRowRender = (record: ProductModelView) => {
+    return (
+      <Table
+        columns={variantColumns}
+        dataSource={record.variants}
+        rowKey="id"
+        pagination={false}
+        size="small"
+      />
+    );
+  };
+
+  // Placeholder for deleting a whole model
+  const handleDeleteModel = async (model: ProductModelView) => {
+    console.log("Deleting model and variants (not implemented):", model);
+    message.info("La eliminación de modelos completos aún no está implementada.");
+    // Implementation would involve:
+    // 1. Confirming with the user
+    // 2. Getting all variant IDs: model.variants.map(v => v.id)
+    // 3. Calling deleteProduct for each ID (maybe Promise.all)
+    // 4. Refetching data
+  };
+
   return (
     <div>
+      {contextHolder}
       <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
         <Title level={2}>Gestión de Productos</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -432,18 +521,23 @@ const ProductsPage: React.FC = () => {
         </Button>
       </Space>
 
-      <Table columns={columns} dataSource={products} rowKey="id" loading={loading} />
+      <Table 
+        columns={columns}
+        dataSource={products}
+        rowKey="key"
+        loading={loading} 
+        expandable={{ expandedRowRender }}
+      />
 
-      {/* Modal de Edición/Creación */}
       <Modal
-        title={editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
+        title="Nuevo Producto"
         open={isModalVisible}
         onCancel={handleCancelModal}
         confirmLoading={isSubmitting}
-        width={700}
+        width={800}
         destroyOnClose
-        footer={(
-          <div style={{ textAlign: 'right' }}>
+        footer={
+          <div style={{ marginTop: 24 }}>
             {currentStep > 0 && (
               <Button style={{ margin: '0 8px' }} onClick={handlePrev}>
                 Anterior
@@ -456,69 +550,126 @@ const ProductsPage: React.FC = () => {
             )}
             {currentStep === steps.length - 1 && (
               <Button type="primary" loading={isSubmitting} onClick={handleModalSubmit}>
-                {editingProduct ? 'Actualizar' : 'Crear'} Producto
+                 Crear Producto
               </Button>
             )}
-            <Button key="cancel" onClick={handleCancelModal} style={{ marginLeft: 8 }}>
-              Cancelar
-            </Button>
           </div>
-        )}
+        }
       >
         <Steps current={currentStep} items={steps} style={{ marginBottom: 24 }} />
         
         <Form form={form} layout="vertical" name="productForm">
           
           <div style={{ display: currentStep === 0 ? 'block' : 'none' }}>
-            <Form.Item name="name" label="Nombre Producto/Modelo" rules={[{ required: true, message: 'Nombre es requerido' }]}>
+            <Title level={5} style={{ marginBottom: 16 }}>Datos del Modelo Base</Title>
+            <Form.Item name="name" label="Nombre Modelo" rules={[{ required: true, message: 'Nombre del modelo es requerido' }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="code" label="Código (SKU)" rules={[{ required: true, message: 'Código es requerido' }]}>
+            <Form.Item name="code" label="Código Base Modelo" rules={[{ required: true, message: 'Código base es requerido' }]}>
               <Input />
             </Form.Item>
              <Form.Item name="description" label="Descripción">
               <Input.TextArea rows={2} />
             </Form.Item>
-            <Space>
-              <Form.Item name="size" label="Talla" rules={[{ required: true, message: 'Talla es requerida' }]}>
-                <Input style={{ width: '100px'}} />
-              </Form.Item>
-              <Form.Item name="color" label="Color" rules={[{ required: true, message: 'Color es requerido' }]}>
-                 <Input style={{ width: '150px'}} />
-              </Form.Item>
-              <Form.Item name="stock" label="Stock Inicial" initialValue={0}>
-                 <InputNumber min={0} style={{ width: '100px'}}/>
-              </Form.Item>
-            </Space>
-            <Space>
-              <Form.Item name="purchasePrice" label="Precio de Costo (S/)">
-                 <InputNumber min={0} step={0.1} style={{ width: '150px'}} addonBefore="S/" placeholder="Opcional" />
-              </Form.Item>
-              <Form.Item name="sellingPrice" label="Precio de Venta (S/)" rules={[{ required: true, message: 'Precio de venta es requerido' }]}>
-                <InputNumber min={0} step={0.1} style={{ width: '150px' }} addonBefore="S/" />
-              </Form.Item>
-            </Space>
           </div>
 
           <div style={{ display: currentStep === 1 ? 'block' : 'none' }}>
+            <Title level={5} style={{ marginBottom: 16 }}>Variantes del Producto (Talla/Color)</Title>
+            <Form.List name="variants" initialValue={[{ size: '', color: '', code: '', sellingPrice: null, purchasePrice: null, stock: 0 }]}>
+              {(fields, { add, remove }) => (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', rowGap: 16 }}>
+                    {fields.map(({ key, name, ...restField }) => (
+                      <Space key={key} style={{ display: 'flex', alignItems: 'baseline' }} align="baseline">
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'size']}
+                          label="Talla"
+                          rules={[{ required: true, message: 'Falta talla' }]}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input placeholder="Ej: 40" style={{ width: '80px' }} />
+                        </Form.Item>
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'color']}
+                          label="Color"
+                          rules={[{ required: true, message: 'Falta color' }]}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input placeholder="Ej: Azul" style={{ width: '120px' }} />
+                        </Form.Item>
+                         <Form.Item
+                          {...restField}
+                          name={[name, 'code']}
+                          label="SKU Variante"
+                          rules={[{ required: true, message: 'Falta SKU' }]}
+                          tooltip="Código único para esta talla/color específico"
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input placeholder="Ej: ZAP-AZ-40" style={{ width: '150px' }} />
+                        </Form.Item>
+                         <Form.Item
+                          {...restField}
+                          name={[name, 'sellingPrice']}
+                          label="P. Venta"
+                          rules={[{ required: true, message: 'Falta precio venta' }]}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <InputNumber addonBefore="S/" min={0} step={0.1} placeholder="150.00" style={{ width: '130px' }}/>
+                        </Form.Item>
+                         <Form.Item
+                          {...restField}
+                          name={[name, 'purchasePrice']}
+                          label="P. Costo"
+                          style={{ marginBottom: 0 }}
+                        >
+                          <InputNumber addonBefore="S/" min={0} step={0.1} placeholder="Opcional" style={{ width: '130px' }}/>
+                        </Form.Item>
+                         <Form.Item
+                          {...restField}
+                          name={[name, 'stock']}
+                          label="Stock Inicial"
+                          initialValue={0}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <InputNumber min={0} style={{ width: '90px' }}/>
+                        </Form.Item>
+
+                        <MinusCircleOutlined onClick={() => remove(name)} />
+                      </Space>
+                    ))}
+                  </div>
+                  <Form.Item>
+                    <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                      Añadir Variante (Talla/Color)
+                    </Button>
+                  </Form.Item>
+                </>
+              )}
+            </Form.List>
+          </div>
+
+          <div style={{ display: currentStep === 2 ? 'block' : 'none' }}>
+            <Title level={5} style={{ marginBottom: 16 }}>Composición del Modelo</Title>
             <Space align="baseline" wrap style={{ marginBottom: '16px'}}>
               <Select<number | undefined>
-                style={{ width: 250 }}
-                placeholder="Seleccionar Materia Prima"
-                value={selectedRawMaterialId}
-                onChange={(value: number | undefined) => setSelectedRawMaterialId(value)}
-                showSearch
-                optionFilterProp="label"
-                filterOption={(input: string, option?: { label: string; value: number }) => 
-                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                }
-                loading={loading}
-                options={availableRawMaterials.map(rm => ({ 
-                  value: rm.id,
-                  label: `${rm.name} (${rm.unit})` 
-                }))}
+                 style={{ width: 250 }}
+                 placeholder="Seleccionar Materia Prima"
+                 value={selectedRawMaterialId}
+                 onChange={(value) => setSelectedRawMaterialId(value)}
+                 showSearch
+                 optionFilterProp="label"
+                 filterOption={(input, option) => 
+                    (typeof option?.label === 'string' ? option.label : '').toLowerCase().includes(input.toLowerCase())
+                 }
+                 loading={loading}
+                 options={availableRawMaterials.map(rm => ({
+                   value: rm.id,
+                   label: `${rm.name} (${rm.unit})` 
+                 }))}
               />
-              <InputNumber 
+              <InputNumber
                  placeholder="Cantidad"
                  min={0.001}
                  step={0.1}
@@ -527,80 +678,40 @@ const ProductsPage: React.FC = () => {
                  onChange={(value: number | null) => setSelectedQuantity(value)}
                />
               <Button type="dashed" onClick={handleAddCompositionItem} icon={<PlusOutlined />}>
-                Añadir a Composición
-              </Button>
+                 Añadir a Composición
+               </Button>
             </Space>
             <List
-              header={<div><strong>Materias Primas Añadidas:</strong></div>}
-              bordered
-              dataSource={currentComposition}
-              locale={{ emptyText: 'Aún no hay materias primas en la composición.' }}
-              renderItem={item => {
-                const rawMaterial = availableRawMaterials.find(rm => rm.id === item.rawMaterialId);
-                return (
-                  <List.Item
-                    actions={[
-                      <Button 
-                        type="link" 
-                        danger 
-                        icon={<DeleteOutlined />} 
-                        onClick={() => handleRemoveCompositionItem(item.rawMaterialId)}
-                      />
-                    ]}
-                  >
-                    <List.Item.Meta
-                      title={rawMaterial?.name || `ID: ${item.rawMaterialId}`}
-                      description={`Unidad: ${rawMaterial?.unit || 'N/A'}`}
-                    />
-                    <div>Cantidad: {item.quantity.toFixed(3)}</div> 
-                  </List.Item>
-                );
-              }}
-              style={{ maxHeight: '250px', overflowY: 'auto'}}
-            />
+                 style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: 24 }}
+                 header={<div><strong>Materias Primas Añadidas:</strong></div>}
+                 bordered
+                 dataSource={currentComposition}
+                 locale={{ emptyText: 'Aún no hay materias primas.' }}
+                 renderItem={item => {
+                   const rawMaterial = availableRawMaterials.find(rm => rm.id === item.rawMaterialId);
+                   return (
+                     <List.Item
+                       actions={[
+                         <Button 
+                           type="link" 
+                           danger 
+                           icon={<DeleteOutlined />} 
+                           onClick={() => handleRemoveCompositionItem(item.rawMaterialId)}
+                         />
+                       ]}
+                     >
+                       <List.Item.Meta
+                         title={rawMaterial?.name || `ID: ${item.rawMaterialId}`}
+                         description={`Unidad: ${rawMaterial?.unit || 'N/A'}`}
+                       />
+                       <div>Cantidad: {item.quantity.toFixed(3)}</div> 
+                     </List.Item>
+                   );
+                 }}
+              />
           </div>
 
         </Form>
-      </Modal>
-
-      {/* Modal de Visualización */}
-      <Modal
-        title={`Detalles del Producto: ${viewingProduct?.name}`}
-        open={isViewModalVisible}
-        onCancel={() => setIsViewModalVisible(false)}
-        footer={[
-          <Button key="back" onClick={() => setIsViewModalVisible(false)}>
-            Cerrar
-          </Button>,
-        ]}
-      >
-        {viewingProduct && (
-          <div>
-            <p><strong>ID:</strong> {viewingProduct.id}</p>
-            <p><strong>Nombre:</strong> {viewingProduct.name}</p>
-            <p><strong>Código:</strong> {viewingProduct.code}</p>
-            <p><strong>Descripción:</strong> {viewingProduct.description || '-'}</p>
-            <p><strong>Talla:</strong> {viewingProduct.size}</p>
-            <p><strong>Color:</strong> {viewingProduct.color}</p>
-            <p><strong>Stock:</strong> {viewingProduct.stock}</p>
-            <p><strong>Precio Costo:</strong> {viewingProduct.purchasePrice ? `S/ ${Number(viewingProduct.purchasePrice).toFixed(2)}` : '-'}</p>
-            <p><strong>Precio Venta:</strong> {`S/ ${Number(viewingProduct.sellingPrice).toFixed(2)}`}</p>
-            <p><strong>Creado:</strong> {viewingProduct.createdAt ? new Date(viewingProduct.createdAt).toLocaleString() : '-'}</p>
-            <p><strong>Actualizado:</strong> {viewingProduct.updatedAt ? new Date(viewingProduct.updatedAt).toLocaleString() : '-'}</p>
-            <Title level={5} style={{ marginTop: '16px' }}>Composición:</Title>
-            {viewingProduct.composition && viewingProduct.composition.length > 0 ? (
-              <ul>
-                {viewingProduct.composition.map(item => (
-                  <li key={item.id}> {/* Asumiendo que item.id es el ID de ProductComposition */}
-                    {item.rawMaterial?.name || `ID: ${item.rawMaterialId}`} - Cantidad: {Number(item.quantity).toFixed(3)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>Este producto no tiene composición definida.</p>
-            )}
-          </div>
-        )}
       </Modal>
     </div>
   );

@@ -16,6 +16,7 @@ import {
   GoldOutlined, // Icono para Materias Primas
   AppstoreOutlined, // Importar icono para Productos
   SwapOutlined, // Importar icono para Movimientos de Stock
+  ToolOutlined, // Importar icono para Producción
 } from '@ant-design/icons';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom'; // Importar Outlet, useNavigate, Link, useLocation
 
@@ -32,6 +33,7 @@ const pathToKeyMap: { [key: string]: string } = {
   '/raw-materials': '4',
   '/productos': '5', // Añadir mapeo para productos
   '/stock-movements': '6', // Añadir mapeo para movimientos
+  '/production-orders': '7', // Añadir mapeo
 };
 
 const MainLayout: React.FC = () => {
@@ -86,6 +88,12 @@ const MainLayout: React.FC = () => {
       key: '6',
       icon: <SwapOutlined />,
       label: <Link to="/stock-movements">Movimientos Stock</Link>,
+    },
+    // Añadir item para Órdenes de Producción
+    {
+      key: '7',
+      icon: <ToolOutlined />,
+      label: <Link to="/production-orders">Producción</Link>,
     },
     // Añadir más ítems aquí (Inventario, Producción, etc.)
   ];
