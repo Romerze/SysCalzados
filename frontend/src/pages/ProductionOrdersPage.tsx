@@ -194,6 +194,23 @@ const ProductionOrdersPage: React.FC = () => {
   const handleCreateSubmit = async () => {
     try {
       const values = await form.validateFields();
+
+      // --- Add stock check before submitting --- 
+      if (stockCheckResult.status === 'insufficient') {
+          message.error('No se puede crear la orden. Falta stock de materias primas.');
+          return; // Stop submission
+      }
+      // Also check if the status is still loading or idle (meaning check hasn't run or completed)
+      if (stockCheckResult.status === 'loading' || stockCheckResult.status === 'idle') {
+           message.warning('Por favor, espere a que la verificación de stock se complete o seleccione un producto/cantidad válidos.');
+           return;
+      }
+      if (stockCheckResult.status === 'error') {
+           message.error('No se pudo verificar el stock debido a un error. Intente de nuevo.');
+           return;
+      }
+      // --- End stock check --- 
+
       setIsSubmitting(true);
       message.loading({ content: 'Creando orden...', key: 'createOrder' });
       await createProductionOrder(values);
