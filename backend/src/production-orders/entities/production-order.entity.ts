@@ -8,6 +8,7 @@ import {
   Index,
 } from 'typeorm';
 import { Product } from '../../products/entities/product.entity';
+import { SalesOrder } from '../../sales-orders/entities/sales-order.entity';
 
 // Enum para el estado de la orden de producción
 export enum ProductionOrderStatus {
@@ -32,6 +33,13 @@ export class ProductionOrder {
   @ManyToOne(() => Product, { eager: true })
   @JoinColumn({ name: 'productId' })
   product: Product;
+
+  @Column({ type: 'int', nullable: true })
+  salesOrderId?: number;
+
+  @ManyToOne(() => SalesOrder, salesOrder => salesOrder.productionOrders, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'salesOrderId' })
+  salesOrder?: SalesOrder;
 
   @Column({ type: 'int' })
   quantityToProduce: number;

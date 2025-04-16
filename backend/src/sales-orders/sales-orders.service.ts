@@ -9,6 +9,7 @@ import { Client } from '../clients/entities/client.entity';
 import { Product } from '../products/entities/product.entity';
 import { UpdateSalesOrderNotesDto } from './dto/update-sales-order-notes.dto';
 import { ProductionOrdersService } from '../production-orders/production-orders.service';
+import { ProductionOrder, ProductionOrderStatus } from '../production-orders/entities/production-order.entity';
 
 // Define structure for stock check result
 interface StockCheckDeficit {
@@ -37,6 +38,8 @@ export class SalesOrdersService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(SalesOrderItem)
     private readonly salesOrderItemRepository: Repository<SalesOrderItem>,
+    @InjectRepository(ProductionOrder)
+    private readonly productionOrderRepository: Repository<ProductionOrder>,
     private readonly dataSource: DataSource,
     private readonly productionOrdersService: ProductionOrdersService,
   ) {}
@@ -95,31 +98,58 @@ export class SalesOrdersService {
     try {
       return await this.salesOrderRepository.save(newOrder);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const errorStack = error instanceof Error ? error.stack : undefined;
-      const errorQuery = typeof error === 'object' && error !== null && 'query' in error ? error.query : undefined;
-      const errorParameters = typeof error === 'object' && error !== null && 'parameters' in error ? error.parameters : undefined;
-      
-      this.logger.error(`Error saving sales order: ${errorMessage}`, { 
-          stack: errorStack, 
+      const err: any = error;
+      const errorQuery =
+        typeof err === 'object' && err !== null && 'query' in err
+          ? err.query
+          : undefined;
+      const errorParameters =
+        typeof err === 'object' && err !== null && 'parameters' in err
+          ? err.parameters
+          : undefined;
+
+      this.logger.error(`Error saving sales order: ${errorMessage}`, {
+          stack: errorStack,
           query: errorQuery,
-          parameters: errorParameters
+          parameters: errorParameters,
        });
       throw new BadRequestException('Error al crear la orden de venta.');
     }
   }
 
   async findAll(): Promise<SalesOrder[]> {
-    return this.salesOrderRepository.find({
-      order: { orderDate: 'DESC' },
-    });
+    // Use QueryBuilder with loadRelationCountAndMap for cleaner counts
+    return (
+      this.salesOrderRepository
+        .createQueryBuilder('salesOrder')
+        .leftJoinAndSelect('salesOrder.client', 'client') // Load client relation
+        // Count ALL related Production Orders
+        .loadRelationCountAndMap(
+          'salesOrder.totalProductionOrders', // Property to map count onto
+          'salesOrder.productionOrders',       // Relation to count
+        )
+        // Count ONLY COMPLETED related Production Orders
+        .loadRelationCountAndMap(
+          'salesOrder.completedProductionOrders', // Property to map count onto
+          'salesOrder.productionOrders',          // Relation to count
+          'completedPO',                          // Alias for the relation in the subquery
+          (qb) =>
+            qb.where('completedPO.status = :status', {
+              status: ProductionOrderStatus.COMPLETED,
+            }),
+        )
+        .orderBy('salesOrder.orderDate', 'DESC')
+        .getMany()
+    );
   }
 
   async findOne(id: number): Promise<SalesOrder> {
     const order = await this.salesOrderRepository.findOne({
        where: { id },
        relations: {
-           client: true, 
+           client: true,
            items: {
                product: true,
            },
@@ -128,20 +158,26 @@ export class SalesOrdersService {
     if (!order) {
       throw new NotFoundException(`Orden de venta con ID ${id} no encontrada.`);
     }
-    order.items = order.items || []; 
+    order.items = order.items || [];
     return order;
   }
 
-  async update(id: number, updateSalesOrderDto: UpdateSalesOrderDto): Promise<SalesOrder> {
+  async update(
+    id: number,
+    updateSalesOrderDto: UpdateSalesOrderDto,
+  ): Promise<SalesOrder> {
     const order = await this.findOne(id);
 
-    if (updateSalesOrderDto.items && order.status === SalesOrderStatus.PENDING) {
+    if (
+      updateSalesOrderDto.items &&
+      order.status === SalesOrderStatus.PENDING
+    ) {
       this.logger.log(`Processing item updates for PENDING order ${id}`);
-      
+
       if (!order.items) {
-           throw new Error("Items relation not loaded for update.");
+           throw new Error('Items relation not loaded for update.');
       }
-      
+
       const queryRunner = this.dataSource.createQueryRunner();
       await queryRunner.connect();
       await queryRunner.startTransaction();
@@ -245,72 +281,229 @@ export class SalesOrdersService {
 
     if (updateSalesOrderDto.status && updateSalesOrderDto.status !== order.status) {
       const currentStatus = order.status;
-      const nextStatus = updateSalesOrderDto.status;
+      const nextStatus = updateSalesOrderDto.status as SalesOrderStatus;
       this.logger.log(`Attempting status change for order ${id}: ${currentStatus} -> ${nextStatus}`);
 
-      if (nextStatus === SalesOrderStatus.CONFIRMED) {
-        if (currentStatus !== SalesOrderStatus.PENDING) {
-           throw new BadRequestException(`No se puede confirmar una orden que no está pendiente.`);
-        }
+      if (nextStatus === SalesOrderStatus.CONFIRMED && currentStatus === SalesOrderStatus.PENDING) {
+        this.logger.log(`Order ${id} moving to CONFIRMED. Checking stock...`);
         
-        const stockCheck = this._checkProductStock(order); 
-
-        if (!stockCheck.sufficient) {
-            this.logger.warn(`Stock insufficient for order ${id}. Deficits: ${JSON.stringify(stockCheck.deficits)}`);
-            
-            const createdProductionOrderIds: number[] = [];
-            const productionErrors: string[] = [];
-            try {
-                this.logger.log(`Attempting to create production orders for deficits of order ${id}`);
-                for (const deficit of stockCheck.deficits) {
-                    try {
-                        const productionOrderPayload = {
-                            productId: deficit.productId,
-                            quantityToProduce: deficit.deficit,
-                            notes: `Generada automáticamente para cubrir déficit del Pedido Venta #${order.orderNumber || order.id}`
-                        };
-                        const newProdOrder = await this.productionOrdersService.create(productionOrderPayload);
-                        this.logger.log(`Created Production Order ${newProdOrder.id} for product ${deficit.productId}, quantity ${deficit.deficit}`);
-                        createdProductionOrderIds.push(newProdOrder.id);
-                    } catch (prodError) {
-                        const errorMsg = prodError instanceof Error ? prodError.message : 'Error desconocido';
-                        this.logger.error(`Failed to create production order for product ${deficit.productId} (deficit ${deficit.deficit}): ${errorMsg}`, prodError instanceof Error ? prodError.stack : undefined);
-                        productionErrors.push(`Producto ${deficit.productName}: ${errorMsg}`);
-                    }
-                }
-            } catch (error) {
-                this.logger.error(`Unexpected error during production order creation loop for order ${id}`, error instanceof Error ? error.stack : undefined);
-                productionErrors.push(`Error inesperado en el proceso: ${error instanceof Error ? error.message : 'Error desconocido'}`);
-            }
-
-            let message = "Stock insuficiente para confirmar el pedido.";
-            if (createdProductionOrderIds.length > 0) {
-                message += ` Se generaron ${createdProductionOrderIds.length} órdenes de producción automáticamente.`;
-            }
-            if (productionErrors.length > 0) {
-                message += ` Errores al generar órdenes de producción: \n- ${productionErrors.join('\n- ')}`;
-            }
-            throw new BadRequestException(message);
-        } else {
-            this.logger.log(`Stock check passed for confirming order ${id}`);
+        const orderForStockCheck = await this.findOne(id);
+        if (
+          !orderForStockCheck.items ||
+          orderForStockCheck.items.length === 0
+         ) {
+             throw new BadRequestException(
+               'No se pueden confirmar pedidos sin ítems.',
+             );
         }
-      }
-      
-      if (nextStatus === SalesOrderStatus.SHIPPED) {
-         if (![SalesOrderStatus.CONFIRMED, SalesOrderStatus.PROCESSING].includes(currentStatus)) {
-             throw new BadRequestException(`No se puede enviar una orden que no está confirmada o en proceso.`);
-         }
-         await this._updateStockForShippedOrder(order); 
-         this.logger.log(`Stock updated successfully for shipping order ${id}`);
-      }
 
-      if (nextStatus === SalesOrderStatus.CANCELLED && ![SalesOrderStatus.PENDING, SalesOrderStatus.CONFIRMED].includes(currentStatus)) {
-         throw new BadRequestException(`No se puede cancelar una orden ${currentStatus.toLowerCase()}.`);
-      }
+        const stockCheckResult = this._checkProductStock(orderForStockCheck);
+        
+        // --- Caso: Stock Insuficiente --- 
+        if (!stockCheckResult.sufficient) {
+          this.logger.warn(
+            `Insufficient stock to confirm order ${id}. Attempting to create Production Orders for deficits.`,
+          );
+          
+          const createdProductionOrderIds: number[] = [];
+          const productionErrors: string[] = [];
+          
+          try {
+              this.logger.log(
+                `Attempting to create production orders for deficits of order ${id}`,
+              );
+              for (const deficit of stockCheckResult.deficits) {
+                  if (deficit.deficit <= 0) continue; 
+                  
+                  // --- Check for existing Production Order linked via salesOrderId ---
+                  // Find ANY existing Production Order linked directly by salesOrderId
+                  const existingPO = await this.productionOrderRepository.findOne({
+                      where: {
+                          salesOrderId: order.id, // Check if a PO already exists for this specific sales order
+                      },
+                  });
 
-      order.status = nextStatus;
+                  // If no PO linked to this SalesOrder exists, create a new one
+                  if (!existingPO) {
+                      this.logger.log(
+                        `No existing PO found linked to sales order ${order.id}. Creating new PO for product ${deficit.productId}.`,
+                      );
+                      try {
+                          const productionOrderPayload = {
+                              productId: deficit.productId,
+                              quantityToProduce: Math.ceil(deficit.deficit),
+                              notes: `Generada automáticamente para cubrir déficit del Pedido Venta #${order.orderNumber || order.id}`, // Keep notes for info
+                              salesOrderId: order.id,
+                          };
+                          const newProdOrder =
+                            await this.productionOrdersService.create(
+                              productionOrderPayload,
+                            );
+                          this.logger.log(
+                            `Created Production Order ${newProdOrder.id} (linked to SO ${order.id}) for product ${deficit.productId}, quantity ${productionOrderPayload.quantityToProduce}`,
+                          );
+                          createdProductionOrderIds.push(newProdOrder.id);
+                      } catch (prodError) {
+                          const errorMsg =
+                            prodError instanceof Error
+                              ? prodError.message
+                              : 'Error desconocido';
+                          this.logger.error(
+                            `Failed to create production order for product ${deficit.productId} (SO ${order.id}, deficit ${deficit.deficit}): ${errorMsg}`,
+                            prodError instanceof Error ? prodError.stack : undefined,
+                          );
+                          productionErrors.push(
+                            `Producto ${deficit.productName} (ID: ${deficit.productId}): ${errorMsg}`,
+                          );
+                      }
+                  } else {
+                       // Log uses existingPO now, linked by ID
+                       this.logger.log(
+                         `Existing Production Order (ID: ${existingPO.id}, Status: ${existingPO.status}) found linked to sales order ${order.id}. Skipping creation.`,
+                       );
+                       // No need to check notes anymore
+                  }
+              } // end for loop
+          } catch (error) {
+              // Catch errors in the loop logic itself, though inner catches should handle PO creation errors
+              this.logger.error(
+                `Unexpected error during production order creation loop for order ${id}`,
+                error instanceof Error ? error.stack : undefined,
+              );
+              productionErrors.push(
+                `Error inesperado en el proceso: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+              );
+          }
+
+          // Construct the final error message for the user
+          let message = 'Stock insuficiente para confirmar el pedido.';
+          if (createdProductionOrderIds.length > 0) {
+              message += ` Se generaron ${createdProductionOrderIds.length} órdenes de producción automáticamente para cubrir el déficit (IDs: ${createdProductionOrderIds.join(', ')}).`;
+          }
+          if (productionErrors.length > 0) {
+              message += ` Errores al generar órdenes de producción: \n- ${productionErrors.join('\n- ')}`;
+          }
+          message +=
+            ' El pedido permanecerá PENDIENTE hasta que haya stock disponible.';
+          
+          // Throw the exception - order confirmation is stopped here
+          throw new BadRequestException(message);
+
+        // --- Caso: Stock Suficiente --- 
+        } else {
+          this.logger.log(
+            `Stock sufficient for all items in order ${id}. Proceeding with confirmation and stock deduction.`,
+          );
+          
+          // Proceed with stock update within a transaction (Existing Logic)
+          const queryRunner = this.dataSource.createQueryRunner();
+          await queryRunner.connect();
+          await queryRunner.startTransaction();
+          this.logger.log(
+            `Transaction started for confirming order ${id} and updating stock.`,
+          );
+
+          try {
+            // Decrease stock for each product item
+            for (const item of orderForStockCheck.items) {
+              const product = item.product;
+              const quantityToDecrease = Number(item.quantity);
+              if (
+                !product ||
+                isNaN(quantityToDecrease) ||
+                quantityToDecrease <= 0
+              ) {
+                 throw new Error(
+                   `Invalid item data found during stock update for order ${id}. Product ID: ${item.productId}`,
+                 );
+              }
+              const currentStock = Number(product.stock);
+              const newStock = currentStock - quantityToDecrease;
+              
+              this.logger.debug(
+                `Updating stock for product ${product.id}: ${currentStock} -> ${newStock}`,
+              );
+              await queryRunner.manager.update(Product, product.id, {
+                stock: newStock,
+               });
+            }
+
+            // Update order status
+            order.status = SalesOrderStatus.CONFIRMED;
+            order.confirmedAt = new Date(); 
+            
+            // Save updated order within the transaction
+            await queryRunner.manager.save(SalesOrder, order);
+            this.logger.log(`Order ${id} status updated to CONFIRMED.`);
+
+            // Commit transaction
+            await queryRunner.commitTransaction();
+            this.logger.log(
+              `Transaction committed for order ${id} confirmation.`,
+            );
+            return this.findOne(id); // Return updated order with relations
+
+          } catch (error) {
+            this.logger.error(
+              `Error during stock update transaction for order ${id}. Rolling back.`,
+              error instanceof Error ? error.stack : undefined,
+            );
+            await queryRunner.rollbackTransaction();
+            const errorMsg =
+              error instanceof Error
+                ? error.message
+                : 'Error desconocido al actualizar stock.';
+            throw new BadRequestException(
+              `Error al confirmar pedido y actualizar stock: ${errorMsg}`,
+            );
+          } finally {
+            await queryRunner.release();
+          }
+        } // Fin del else (stock suficiente)
+
+      } else if (nextStatus === SalesOrderStatus.SHIPPED && currentStatus === SalesOrderStatus.CONFIRMED) {
+           this.logger.log(`Order ${id} moving to SHIPPED.`);
+           order.status = SalesOrderStatus.SHIPPED;
+           order.shippedAt = new Date();
+           return this.salesOrderRepository.save(order);
+           
+      } else if (nextStatus === SalesOrderStatus.DELIVERED && currentStatus === SalesOrderStatus.SHIPPED) {
+           this.logger.log(`Order ${id} moving to DELIVERED.`);
+           order.status = SalesOrderStatus.DELIVERED;
+           order.deliveredAt = new Date();
+           return this.salesOrderRepository.save(order);
+
+      } else if (nextStatus === SalesOrderStatus.CANCELLED) {
+           this.logger.log(`Order ${id} moving to CANCELLED.`);
+
+           // --- VALIDACIÓN DE ESTADO ANTES DE CANCELAR ---
+           if (![SalesOrderStatus.PENDING, SalesOrderStatus.CONFIRMED].includes(currentStatus)) {
+               this.logger.warn(`Attempted to cancel order ${id} from invalid status: ${currentStatus}`);
+               throw new BadRequestException(`No se puede cancelar un pedido con estado: ${currentStatus}.`); 
+           }
+           // --- FIN VALIDACIÓN ---
+
+           if (currentStatus === SalesOrderStatus.CONFIRMED) {
+               this.logger.warn(
+                 `Order ${id} was CONFIRMED. Cancelling without automatic stock replenishment.`,
+               );
+           }
+           order.status = SalesOrderStatus.CANCELLED;
+           order.cancelledAt = new Date();
+           return this.salesOrderRepository.save(order);
+
+      } else {
+           this.logger.warn(
+             `Invalid status transition requested for order ${id}: ${currentStatus} -> ${nextStatus}`,
+           );
+           throw new BadRequestException(
+             `Transición de estado inválida: ${currentStatus} -> ${nextStatus}`,
+           );
+      }
     } else if (updateSalesOrderDto.notes !== undefined) {
-        this.logger.warn(`Updating notes via general update endpoint for order ${id}. Consider using dedicated endpoint.`);
+        this.logger.warn(
+          `Updating notes via general update endpoint for order ${id}. Consider using dedicated endpoint.`,
+        );
         order.notes = updateSalesOrderDto.notes;
     }
 
@@ -351,9 +544,17 @@ export class SalesOrdersService {
   async remove(id: number): Promise<void> {
     const order = await this.findOne(id);
 
+    // --- LOGGING PARA DEBUG --- 
+    this.logger.log(`Attempting to remove order ${id} with status: ${order?.status}`);
+
     if (![SalesOrderStatus.PENDING, SalesOrderStatus.CANCELLED].includes(order?.status)) {
+      // --- LOGGING PARA DEBUG --- 
+      this.logger.warn(`Validation FAILED for remove order ${id}. Status ${order?.status} is not PENDING or CANCELLED.`);
       throw new BadRequestException(`No se puede eliminar una orden con estado ${order?.status?.toLowerCase() ?? 'desconocido'}. Considere cancelarla.`);
     }
+
+    // --- LOGGING PARA DEBUG --- 
+    this.logger.log(`Validation PASSED for remove order ${id}. Proceeding with deletion.`);
 
     const result = await this.salesOrderRepository.delete(id);
 

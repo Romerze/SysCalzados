@@ -27,6 +27,7 @@ import {
   ProductionOrderStatus,
   Product,
   RawMaterial,
+  SalesOrder,
 } from '../types/models';
 import {
   getProductionOrders,
@@ -289,6 +290,15 @@ const ProductionOrdersPage: React.FC = () => {
     {
       title: 'N° Orden', dataIndex: 'orderNumber', key: 'orderNumber',
       render: (text) => text || '-',
+    },
+    {
+      title: 'Pedido Origen',
+      dataIndex: 'salesOrder',
+      key: 'salesOrderNumber',
+      render: (salesOrder: SalesOrder | null | undefined) => {
+        // Asegurarse de que salesOrder y su orderNumber existan
+        return salesOrder?.orderNumber ? salesOrder.orderNumber : '-';
+      },
     },
     {
       title: 'Producto',

@@ -138,6 +138,9 @@ export interface SalesOrder {
   totalAmount?: number;
   createdAt: string; // ISO String
   updatedAt: string; // ISO String
+  // Campos añadidos para el estado de producción
+  totalProductionOrders?: number;
+  completedProductionOrders?: number;
 }
 
 // Interface for the grouped product model view (used in ProductsPage)

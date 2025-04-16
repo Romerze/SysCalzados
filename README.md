@@ -1,12 +1,69 @@
-# Sistema de Gestión para Fábrica de Calzados
+# SystemCalzados - Sistema de Gestión ERP
 
-Este proyecto es un sistema de gestión integral diseñado para optimizar los procesos de una fábrica de calzados.
+Sistema básico para la gestión de Calzados XYZ, desarrollado con NestJS (Backend) y React + Ant Design (Frontend).
 
-**Pila Tecnológica:**
+## Funcionalidades Principales
 
-*   **Frontend:** React (con TypeScript) + Ant Design (AntD)
-*   **Backend:** Node.js con NestJS
-*   **Base de Datos:** PostgreSQL
+*   **Gestión de Clientes:** CRUD básico.
+*   **Gestión de Proveedores:** CRUD básico.
+*   **Gestión de Materias Primas:** CRUD básico, asociación con Proveedores.
+*   **Gestión de Productos:**
+    *   CRUD de productos con variantes (talla, color).
+    *   Composición de materias primas por producto.
+    *   Generación automática de SKU para variantes (`[NOMBRE(3)]-[TALLA]-[COLOR(3)]`) con validación de unicidad.
+    *   Modal de creación de producto mejorado con pasos.
+    *   Modal de edición de variante con SKU no editable.
+*   **Gestión de Pedidos de Venta:**
+    *   CRUD de pedidos de venta asociados a clientes.
+    *   Selección de productos y cálculo automático de total.
+    *   Gestión de estados (Pendiente, Confirmado, Enviado, Entregado, Cancelado).
+    *   **Validación de stock** al confirmar un pedido.
+    *   **Generación automática de Órdenes de Producción** si no hay stock suficiente al confirmar.
+    *   **Visualización del estado de producción** directamente en la tabla de pedidos de venta (iconos).
+    *   **Validaciones de acciones** corregidas (confirmar, cancelar, eliminar).
+    *   **Diálogos de confirmación** (`Popconfirm`) para acciones de Cancelar y Eliminar.
+    *   Colores de estado mejorados para mejor diferenciación visual.
+*   **Gestión de Órdenes de Producción:**
+    *   CRUD básico de órdenes de producción asociadas a productos.
+    *   Gestión de estados (Pendiente, En Progreso, Completado, Cancelado).
+    *   **Consumo automático de stock** de materias primas al iniciar producción (con validación previa).
+    *   **Incremento automático de stock** del producto terminado al completar la orden.
+    *   **Visualización del Pedido de Venta de origen** en la tabla.
+*   **Gestión de Movimientos de Stock:** Registro automático de entradas (al completar producción) y salidas (al iniciar producción).
+
+## Tecnologías
+
+*   **Backend:** NestJS, TypeORM, PostgreSQL
+*   **Frontend:** React, TypeScript, Ant Design, Axios
+
+## Próximos Pasos / Mejoras Pendientes
+
+*   Refinar UI/UX en general.
+*   Implementar paginación y filtros más avanzados en tablas.
+*   Añadir dashboard principal.
+*   Mejorar manejo de errores y feedback al usuario.
+*   Implementar autenticación y autorización.
+*   Añadir pruebas unitarias e integración.
+*   Gestión de stock más compleja (reservas, lotes, etc.).
+*   Lógica para reponer stock al cancelar pedidos confirmados (actualmente solo advierte).
+
+## Instalación y Ejecución
+
+(Instrucciones básicas)
+
+1.  **Backend:**
+    ```bash
+    cd backend
+    npm install
+    # Configurar .env con datos de PostgreSQL
+    npm run start:dev
+    ```
+2.  **Frontend:**
+    ```bash
+    cd frontend
+    npm install
+    npm start
+    ```
 
 ---
 

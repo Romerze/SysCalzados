@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Button,
   Typography,
@@ -12,10 +12,12 @@ import {
   InputNumber,
   Select,
   Divider,
-  Popconfirm,
   Statistic,
+  notification,
+  Tooltip,
+  Popconfirm,
 } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import type { TableProps } from 'antd/es/table';
 import {
   PlusOutlined,
   EyeOutlined,
@@ -23,48 +25,49 @@ import {
   DeleteOutlined,
   MinusCircleOutlined,
   CheckCircleOutlined,
+  SyncOutlined,
+  CloseCircleOutlined,
   CarOutlined,
-  StopOutlined,
+  CheckSquareOutlined,
 } from '@ant-design/icons';
-import { SalesOrder, Client, Product, SalesOrderStatus } from '../types/models';
+import { SalesOrder, Client, Product, SalesOrderStatus /*, SalesOrderItem */ } from '../types/models'; // Comment out or remove SalesOrderItem if unused
 import { 
     createSalesOrder, updateSalesOrder, deleteSalesOrder,
     getSalesOrders, getClients, getProducts, getSalesOrderById,
     CreateSalesOrderPayload, UpdateSalesOrderPayload, SalesOrderItemPayload
 } from '../services/api';
-import { format } from 'date-fns';
-import axios from 'axios';
 import ViewDetailsModal from '../components/ViewDetailsModal';
+import axios from 'axios';
 
 const { Title } = Typography;
+// const { Option } = Select; // Ensure this is commented out or removed
+// const { confirm } = Modal;
 
-const getStatusColor = (status: SalesOrderStatus) => {
+const getStatusText = (status: SalesOrderStatus): string => {
   switch (status) {
-    case SalesOrderStatus.PENDING:
-      return 'orange';
-    case SalesOrderStatus.CONFIRMED:
-      return 'blue';
-    case SalesOrderStatus.PROCESSING:
-      return 'processing';
-    case SalesOrderStatus.SHIPPED:
-      return 'purple';
-    case SalesOrderStatus.DELIVERED:
-      return 'success';
-    case SalesOrderStatus.CANCELLED:
-      return 'error';
-    case SalesOrderStatus.REFUNDED:
-      return 'default';
-    default:
-      return 'default';
+    case SalesOrderStatus.PENDING: return 'Pendiente';
+    case SalesOrderStatus.CONFIRMED: return 'Confirmado';
+    case SalesOrderStatus.PROCESSING: return 'Procesando';
+    case SalesOrderStatus.SHIPPED: return 'Enviado';
+    case SalesOrderStatus.DELIVERED: return 'Entregado';
+    case SalesOrderStatus.CANCELLED: return 'Cancelado';
+    case SalesOrderStatus.REFUNDED: return 'Reembolsado';
+    default: return status;
   }
 };
 
-// Define FormListItem structure first
-interface FormListItem {
-    productId?: number | null;
-    quantity?: number | null;
-    unitPrice?: number | null;
-}
+const getStatusColor = (status: SalesOrderStatus): string => {
+  switch (status) {
+    case SalesOrderStatus.PENDING: return 'gold';
+    case SalesOrderStatus.CONFIRMED: return 'processing';
+    case SalesOrderStatus.PROCESSING: return 'purple';
+    case SalesOrderStatus.SHIPPED: return 'cyan';
+    case SalesOrderStatus.DELIVERED: return 'success';
+    case SalesOrderStatus.CANCELLED: return 'error';
+    case SalesOrderStatus.REFUNDED: return 'orange';
+    default: return 'default';
+  }
+};
 
 // Define structure for the form values
 interface SalesOrderFormValues {
@@ -84,6 +87,13 @@ interface ValidationErrorInfo {
   values: SalesOrderFormValues; 
 }
 
+// Define FormListItem structure locally if needed (or ensure it's defined elsewhere)
+interface FormListItem {
+    productId?: number | null;
+    quantity?: number | null;
+    unitPrice?: number | null;
+}
+
 const SalesOrdersPage: React.FC = () => {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -92,8 +102,8 @@ const SalesOrdersPage: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form] = Form.useForm<SalesOrderFormValues>();
-  const [modal, contextHolder] = Modal.useModal();
-  const logger = console; // Use console as a logger for simplicity in component
+  const [modal, modalContextHolder] = Modal.useModal();
+  const [notificationApi, notificationContextHolder] = notification.useNotification();
 
   // New states for edit/view logic
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
@@ -165,6 +175,8 @@ const SalesOrdersPage: React.FC = () => {
   };
 
   const handleEdit = async (id: number) => {
+    // ---- DEBUG LOG ----
+    console.log(`handleEdit called for order ID: ${id}`); 
     const actionKey = `loadEdit-${id}`;
     message.loading({ content: 'Cargando datos del pedido...', key: actionKey });
     try {
@@ -201,12 +213,11 @@ const SalesOrdersPage: React.FC = () => {
       await deleteSalesOrder(id);
       message.success({ content: 'Pedido eliminado correctamente', key: actionKey });
       fetchData(); // Refresh data after delete
-    } catch (error) {
+    } catch (error: unknown) {
       message.destroy(actionKey); // Remove loading message on error
       console.error(`Error deleting order ${id}:`, error);
       let errorMsg = 'Error al eliminar el pedido.';
       if (axios.isAxiosError(error) && error.response?.data?.message) {
-        // Use backend message if available
         errorMsg = Array.isArray(error.response.data.message) 
                     ? error.response.data.message.join('; ') 
                     : error.response.data.message;
@@ -230,7 +241,7 @@ const SalesOrdersPage: React.FC = () => {
         typeof errorInfo === 'object' && 
         errorInfo !== null && 
         'errorFields' in errorInfo && 
-        Array.isArray((errorInfo as { errorFields: any[] }).errorFields) &&
+        Array.isArray((errorInfo as { errorFields: unknown[] }).errorFields) &&
         'values' in errorInfo
       ) {
           const validationError = errorInfo as ValidationErrorInfo;
@@ -240,16 +251,16 @@ const SalesOrdersPage: React.FC = () => {
           );
 
           if (nonWarningErrors.length === 0) {
-            logger.warn('Validation failed only due to stock warnings. Proceeding.');
+            console.warn('Validation failed only due to stock warnings. Proceeding.');
             formValues = validationError.values;
             proceedWithApiCall = true;
           } else {
-            logger.error('Form validation failed:', validationError.errorFields);
+            console.error('Form validation failed:', validationError.errorFields);
             message.error('Por favor, corrija los errores en el formulario.');
             proceedWithApiCall = false;
           }
       } else {
-          logger.error('Unexpected error during form validation:', errorInfo);
+          console.error('Unexpected error during form validation:', errorInfo);
           message.error('Error inesperado al validar el formulario.');
           proceedWithApiCall = false;
       }
@@ -318,30 +329,51 @@ const SalesOrdersPage: React.FC = () => {
 
   // --- Handle Status Update ---
   const handleUpdateStatus = async (id: number, status: SalesOrderStatus, actionText: string) => {
-    const loadingKey = `loading-status-${id}`;
-    const resultKey = `result-status-${id}`;
-    message.loading({ content: `${actionText} pedido...`, key: loadingKey });
-    setIsSubmitting(true); // Use general submitting flag or a specific one?
+    const key = `update-status-${id}-${status}`;
+    message.loading({ content: `${actionText}...`, key });
     try {
-      await updateSalesOrder(id, { status }); // API expects { status: string }
-      message.destroy(loadingKey);
-      message.success({ content: `Pedido ${status.toLowerCase()} correctamente`, key: resultKey });
-      fetchData(); // Refresh data
+      const updatedOrder = await updateSalesOrder(id, { status });
+      setOrders(prevOrders => prevOrders.map(order => (order.id === id ? updatedOrder : order)));
+      message.success({ content: `Pedido ${actionText.toLowerCase()} correctamente`, key });
     } catch (error: unknown) {
-      message.destroy(loadingKey);
-      console.error(`Error updating order ${id} status to ${status}:`, error);
-      let errorMsg = 'Error al actualizar estado del pedido.';
+      // Log the raw error and extracted message for debugging
+      console.error(`[DEBUG] Raw error object in handleUpdateStatus catch:`, error);
+      
+      let errorMsg = `Error al ${actionText.toLowerCase()} el pedido.`;
+      let isStockErrorWithPO = false;
+      
       if (axios.isAxiosError(error) && error.response?.data?.message) {
-        errorMsg = Array.isArray(error.response.data.message)
-                  ? error.response.data.message.join('; ')
-                  : error.response.data.message;
+         errorMsg = Array.isArray(error.response.data.message)
+           ? error.response.data.message.join('; ')
+           : error.response.data.message;
+         
+         console.log(`[DEBUG] Extracted errorMsg:`, errorMsg);
+
+         // Check if the error message indicates insufficient stock and PO creation attempt
+         if (typeof errorMsg === 'string' && errorMsg.includes('Stock insuficiente') && errorMsg.includes('órdenes de producción')) {
+            console.log(`[DEBUG] Detected stock error with PO creation attempt.`);
+            isStockErrorWithPO = true;
+         } else {
+            console.log(`[DEBUG] Did NOT detect stock error with PO creation attempt.`);
+         }
+      } else {
+           console.log(`[DEBUG] Error is not AxiosError or message structure is different.`);
       }
-      modal.error({
-          title: `Error al ${actionText.toLowerCase()} Pedido`,
-          content: errorMsg,
-      });
-    } finally {
-      setIsSubmitting(false);
+
+      message.destroy(key); // Remove loading message first
+      
+      if (isStockErrorWithPO) {
+         // Use notification API from hook
+         notificationApi.warning({
+            message: `No se pudo confirmar el pedido #${id}`,
+            description: errorMsg, // Show the detailed message from backend
+            duration: 0, // Keep open until manually closed
+            key: `stock-error-po-${id}`, // Unique key for this notification
+         });
+      } else {
+         // Use standard message.error for other errors
+         message.error({ content: errorMsg, duration: 5 });
+      }
     }
   };
 
@@ -365,10 +397,10 @@ const SalesOrdersPage: React.FC = () => {
         // Set the value with the entire updated items array
         form.setFieldsValue({ items: updatedItems });
       } else {
-           logger.error(`Invalid selling price found for product ${productId}: ${product.sellingPrice}`);
+        console.error(`Invalid selling price found for product ${productId}: ${product.sellingPrice}`);
       }
     } else {
-        logger.warn(`Product ${productId} not found or has no selling price.`);
+        console.warn(`Product ${productId} not found or has no selling price.`);
         // Optionally clear the price if product is invalid?
         // const currentItems = form.getFieldValue('items') || [];
         // const updatedItems = currentItems.map((item, index) => index === fieldIndex ? { ...item, unitPrice: undefined } : item);
@@ -389,46 +421,71 @@ const SalesOrdersPage: React.FC = () => {
      }, 0);
   };
 
-  const columns: ColumnsType<SalesOrder> = [
+  const columns: TableProps<SalesOrder>['columns'] = useMemo(() => [
     {
       title: 'Nº Orden',
       dataIndex: 'orderNumber',
       key: 'orderNumber',
-      render: (text) => text || 'N/A',
+      sorter: (a, b) => (a.orderNumber ?? '').localeCompare(b.orderNumber ?? ''),
     },
     {
       title: 'Cliente',
       dataIndex: 'client',
-      key: 'client',
-      render: (client: Client) => client ? `${client.firstName} ${client.lastName}` : '-',
+      key: 'clientName',
+      render: (client: Client | null | undefined) => client ? `${client.firstName} ${client.lastName}` : 'N/A',
     },
     {
       title: 'Fecha Pedido',
       dataIndex: 'orderDate',
       key: 'orderDate',
-      render: (date: string) => format(new Date(date), 'dd/MM/yyyy HH:mm'),
+      render: (date: string) => date ? new Date(date).toLocaleDateString() : 'N/A',
       sorter: (a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime(),
+      defaultSortOrder: 'descend',
     },
     {
       title: 'Estado',
       dataIndex: 'status',
       key: 'status',
-      render: (status: SalesOrderStatus) => (
-        <Tag color={getStatusColor(status)}>{status}</Tag>
-      ),
+      render: (status: SalesOrderStatus) => <Tag color={getStatusColor(status)}>{getStatusText(status)}</Tag>,
+      filters: Object.values(SalesOrderStatus).map(s => ({ text: getStatusText(s), value: s })),
+      onFilter: (value, record) => record.status === value,
+    },
+    {
+      title: 'Producción',
+      key: 'productionStatus',
+      align: 'center',
+      render: (_, record: SalesOrder) => {
+        const total = record.totalProductionOrders;
+        const completed = record.completedProductionOrders;
+
+        if (total !== undefined && total > 0) {
+          if (completed !== undefined && completed >= total) {
+            return <Tooltip title="Producción completada"><CheckCircleOutlined style={{ color: 'green', fontSize: '18px' }} /></Tooltip>;
+          } else {
+            return <Tooltip title="Producción pendiente/en progreso"><SyncOutlined spin style={{ color: 'orange', fontSize: '18px' }} /></Tooltip>;
+          }
+        } 
+        return <span style={{ color: '#ccc' }}>-</span>; // No production needed/triggered
+      },
     },
     {
       title: 'Total',
       dataIndex: 'totalAmount',
       key: 'totalAmount',
       align: 'right',
-      render: (amount: number | string | null) => {
-        const numericAmount = Number(amount);
-        return !isNaN(numericAmount) && amount !== null 
-               ? `S/ ${numericAmount.toFixed(2)}` 
-               : '-';
+      render: (amount: number | null | undefined) => {
+          const numAmount = Number(amount);
+          return amount === null || amount === undefined || isNaN(numAmount)
+            ? '-' 
+            : `$${numAmount.toFixed(2)}`;
       },
-      sorter: (a, b) => (Number(a.totalAmount || 0)) - (Number(b.totalAmount || 0)),
+      sorter: (a, b) => {
+        const numA = Number(a.totalAmount);
+        const numB = Number(b.totalAmount);
+        if (isNaN(numA)) return -1;
+        if (isNaN(numB)) return 1;
+        return numA - numB;
+      },
     },
     {
       title: 'Acciones',
@@ -436,74 +493,93 @@ const SalesOrdersPage: React.FC = () => {
       align: 'center',
       render: (_, record) => (
         <Space size="small">
-          <Button type="link" icon={<EyeOutlined />} onClick={() => handleView(record.id)} title="Ver Detalles" />
-          <Button 
-             type="link" 
-             icon={<EditOutlined />} 
-             onClick={() => handleEdit(record.id)} 
-             title="Editar Pedido" 
-             disabled={record.status !== SalesOrderStatus.PENDING}
-           />
-           
-           {record.status === SalesOrderStatus.PENDING && (
+          <Tooltip title="Ver Detalles">
+             <Button icon={<EyeOutlined />} onClick={() => handleView(record.id)} size="small" />
+          </Tooltip>
+          {(record.status === SalesOrderStatus.PENDING) && (
+              <Tooltip title="Editar Pedido">
+                  <Button icon={<EditOutlined />} onClick={() => handleEdit(record.id)} size="small" />
+              </Tooltip>
+          )}
+          {(record.status === SalesOrderStatus.PENDING || record.status === SalesOrderStatus.CANCELLED) && (
+              <Tooltip title="Eliminar Pedido">
+                  <Popconfirm
+                    title={<div>¿Está seguro que desea eliminar este pedido?<br/>Esta acción no se puede deshacer.</div>}
+                    onConfirm={() => handleDelete(record.id)}
+                    okText="Sí, eliminar"
+                    okType="danger"
+                    cancelText="No"
+                  >
+                    <Button 
+                       danger 
+                       icon={<DeleteOutlined />} 
+                       size="small" 
+                     />
+                  </Popconfirm>
+              </Tooltip>
+          )}
+          {record.status === SalesOrderStatus.PENDING && (
+             <Tooltip title="Confirmar Pedido (Verificará Stock)">
+               <Button 
+                 type="link" 
+                 icon={<CheckCircleOutlined />} 
+                 onClick={() => handleUpdateStatus(record.id, SalesOrderStatus.CONFIRMED, 'Confirmando')} 
+                 size="small" 
+                 style={{ color: '#52c41a' }} 
+               />
+             </Tooltip>
+          )}
+          {record.status === SalesOrderStatus.CONFIRMED && (
+             <Tooltip title="Marcar como Enviado">
+               <Button 
+                 type="link" 
+                 icon={<CarOutlined />} 
+                 onClick={() => handleUpdateStatus(record.id, SalesOrderStatus.SHIPPED, 'Marcando como Enviado')} 
+                 size="small" 
+                 style={{ color: '#722ed1' }} 
+               />
+             </Tooltip>
+          )}
+           {record.status === SalesOrderStatus.SHIPPED && (
+             <Tooltip title="Marcar como Entregado">
+               <Button 
+                 type="link" 
+                 icon={<CheckSquareOutlined />} 
+                 onClick={() => handleUpdateStatus(record.id, SalesOrderStatus.DELIVERED, 'Marcando como Entregado')} 
+                 size="small" 
+                 style={{ color: '#52c41a' }}
+               />
+             </Tooltip>
+          )}
+          {record.status !== SalesOrderStatus.CANCELLED && record.status !== SalesOrderStatus.DELIVERED && (
+            <Tooltip title="Cancelar Pedido">
               <Popconfirm
-                title="¿Confirmar este pedido?"
-                description="Esto podría iniciar la reserva de stock."
-                onConfirm={() => handleUpdateStatus(record.id, SalesOrderStatus.CONFIRMED, 'Confirmando')}
-                okText="Sí, confirmar"
-                cancelText="No"
-              >
-                 <Button type="link" icon={<CheckCircleOutlined />} title="Confirmar Pedido" style={{ color: '#52c41a' }} />
-               </Popconfirm>
-           )}
-           
-           {(record.status === SalesOrderStatus.CONFIRMED || record.status === SalesOrderStatus.PROCESSING) && (
-              <Popconfirm
-                title="¿Marcar como enviado?"
-                description="Esto descontará el stock de los productos."
-                onConfirm={() => handleUpdateStatus(record.id, SalesOrderStatus.SHIPPED, 'Enviando')}
-                okText="Sí, enviar"
-                cancelText="No"
-              >
-                  <Button type="link" icon={<CarOutlined />} title="Marcar como Enviado" style={{ color: '#722ed1' }} />
-              </Popconfirm>
-           )}
-
-           {[SalesOrderStatus.PENDING, SalesOrderStatus.CONFIRMED].includes(record.status) && (
-              <Popconfirm
-                title="¿Cancelar este pedido?"
-                description="Esta acción no se puede deshacer fácilmente."
-                onConfirm={() => handleUpdateStatus(record.id, SalesOrderStatus.CANCELLED, 'Cancelando')}
+                title={<div>¿Está seguro que desea cancelar este pedido?<br />Esta acción no se puede deshacer.</div>}
+                onConfirm={() => {
+                  handleUpdateStatus(record.id, SalesOrderStatus.CANCELLED, 'Cancelando');
+                }}
                 okText="Sí, cancelar"
+                okType="danger"
                 cancelText="No"
               >
-                  <Button type="link" danger icon={<StopOutlined />} title="Cancelar Pedido" />
+                <Button 
+                  danger 
+                  type="link" 
+                  icon={<CloseCircleOutlined />} 
+                  size="small"
+                />
               </Popconfirm>
-           )}
-
-           <Popconfirm
-             title="¿Eliminar este pedido?"
-             description={`Estás a punto de eliminar PERMANENTEMENTE el pedido #${record.orderNumber || record.id}. ¿Continuar?`}
-             onConfirm={() => handleDelete(record.id)}
-             okText="Sí, eliminar"
-             cancelText="No"
-             disabled={![SalesOrderStatus.PENDING, SalesOrderStatus.CANCELLED].includes(record.status)}
-           >
-             <Button 
-               type="link" 
-               danger 
-               icon={<DeleteOutlined />} 
-               title="Eliminar Pedido" 
-               disabled={![SalesOrderStatus.PENDING, SalesOrderStatus.CANCELLED].includes(record.status)}
-             />
-           </Popconfirm>
+            </Tooltip>
+          )}
         </Space>
       ),
     },
-  ];
+  ], [handleEdit, handleView, handleDelete, handleUpdateStatus]);
 
   return (
     <div>
+      {modalContextHolder}
+      {notificationContextHolder}
       {/* Flex container for Title and Button */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Title level={2} style={{ margin: 0 }}>Gestión de Pedidos de Venta</Title>
@@ -705,8 +781,6 @@ const SalesOrdersPage: React.FC = () => {
             onClose={handleCloseViewModal} 
           />
       )}
-
-      {contextHolder}
     </div>
   );
 };

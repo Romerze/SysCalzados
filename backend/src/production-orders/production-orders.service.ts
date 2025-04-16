@@ -29,14 +29,31 @@ export class ProductionOrdersService {
   ) {}
 
   async create(createDto: CreateProductionOrderDto): Promise<ProductionOrder> {
-    // TODO: Verificar si el producto existe y tiene composición?
-    // (Verification happens in startProduction before actual consumption)
+    const { productId, quantityToProduce, ...restData } = createDto;
+    
+    // --- Verify Product Exists --- 
+    try {
+        this.logger.debug(`Verifying product with ID: ${productId}`);
+        await this.productsService.findOne(productId); // Throws NotFoundException if not found
+        this.logger.debug(`Product ${productId} verified.`);
+    } catch (error) {
+        if (error instanceof NotFoundException) {
+            this.logger.error(`Product with ID ${productId} not found. Cannot create production order.`);
+            throw new BadRequestException(`El producto con ID ${productId} no existe. No se puede crear la orden.`);
+        }
+        // Re-throw other unexpected errors during product check
+        this.logger.error(`Unexpected error verifying product ${productId}: ${error.message}`, error.stack);
+        throw error; 
+    }
+    // --- End Product Verification ---
 
     const orderNumber = this._generateProductionOrderNumber(); // Generate number
     this.logger.log(`Generated production order number: ${orderNumber}`);
 
     const newOrder = this.orderRepository.create({
-      ...createDto,
+      productId,
+      quantityToProduce,
+      ...restData, // Include notes if provided
       orderNumber: orderNumber, // Assign generated number
       status: ProductionOrderStatus.PENDING,
     });
@@ -57,7 +74,10 @@ export class ProductionOrdersService {
   }
 
   findAll(): Promise<ProductionOrder[]> {
-    return this.orderRepository.find({ relations: ['product'], order: { createdAt: 'DESC'} });
+    return this.orderRepository.find({ 
+        relations: ['product', 'salesOrder'], 
+        order: { createdAt: 'DESC'} 
+    });
   }
 
   async findOne(id: number): Promise<ProductionOrder> {
@@ -261,11 +281,12 @@ export class ProductionOrdersService {
     const year = now.getFullYear();
     const month = (now.getMonth() + 1).toString().padStart(2, '0');
     const day = now.getDate().toString().padStart(2, '0');
-    // Get hour and minute
     const hour = now.getHours().toString().padStart(2, '0');
     const minute = now.getMinutes().toString().padStart(2, '0');
-    // Construct the new format
-    return `ORD-${year}${month}${day}${hour}${minute}`;
+    const second = now.getSeconds().toString().padStart(2, '0'); // Add seconds
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase(); // Add short random suffix
+    // Construct the new, more unique format
+    return `ORD-${year}${month}${day}${hour}${minute}${second}-${randomSuffix}`;
   }
 
 } 

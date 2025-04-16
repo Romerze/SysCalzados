@@ -16,6 +16,9 @@ import { RawMaterialsModule } from '../raw-materials/raw-materials.module';
   ],
   controllers: [ProductionOrdersController],
   providers: [ProductionOrdersService],
-  exports: [ProductionOrdersService]
+  exports: [
+    ProductionOrdersService,
+    TypeOrmModule
+  ]
 })
 export class ProductionOrdersModule {} 
