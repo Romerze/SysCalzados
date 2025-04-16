@@ -24,13 +24,16 @@ import {
   SearchOutlined,
   MinusCircleOutlined,
 } from '@ant-design/icons';
-import { Product, RawMaterial } from '../types/models';
+import { Product, RawMaterial, ProductModelView } from '../types/models';
 import {
   getProducts, deleteProduct, createProduct,
   getRawMaterials,
+  updateProduct,
 } from '../services/api';
 import axios from 'axios';
 import Highlighter from 'react-highlight-words';
+import { UpdateProductPayload } from '../services/api';
+import EditProductModal from '../components/EditProductModal';
 
 const { Title } = Typography;
 
@@ -38,7 +41,7 @@ type CompositionItemPayload = {
   rawMaterialId: number;
   quantity: number;
 };
-type CreateProductPayload = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'composition'> & {
+type CreateProductPayload = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'composition' | 'code'> & {
   composition?: CompositionItemPayload[];
 };
 
@@ -50,14 +53,6 @@ interface VariantFormData {
   sellingPrice: number | null;
   purchasePrice?: number | null;
   stock: number;
-}
-
-// Interface for the grouped product model view
-interface ProductModelView {
-  key: string; // Use name as key
-  name: string;
-  description?: string; 
-  variants: Product[]; 
 }
 
 const ProductsPage: React.FC = () => {
@@ -73,6 +68,11 @@ const ProductsPage: React.FC = () => {
   const [selectedRawMaterialId, setSelectedRawMaterialId] = useState<number | undefined>(undefined);
   const [selectedQuantity, setSelectedQuantity] = useState<number | null>(1);
   const [currentStep, setCurrentStep] = useState(0);
+
+  // Add state for the Edit Modal
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   const [form] = Form.useForm();
   const [modal, contextHolder] = Modal.useModal();
@@ -199,10 +199,46 @@ const ProductsPage: React.FC = () => {
     setIsModalVisible(true);
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleEdit = (_product: Product) => {
-    message.info('La edición detallada se implementará en una futura versión. Use la creación por ahora.');
+  // --- Implement Edit Logic --- 
+  const handleEdit = (variantToEdit: Product) => {
+    if (!variantToEdit) {
+      message.error('Error: No se proporcionó información del producto para editar.');
+      return;
+    }
+    console.log("Editing Product:", variantToEdit); // Debug log
+    setEditingProduct(variantToEdit); 
+    setIsEditModalVisible(true); 
   };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalVisible(false);
+    setEditingProduct(null); // Clear editing state on close
+  };
+
+  const handleFinishEdit = async (id: number, values: UpdateProductPayload) => {
+    const actionKey = `updateProd-${id}`;
+    setIsEditSubmitting(true);
+    message.loading({ content: 'Actualizando variante...', key: actionKey });
+    try {
+      await updateProduct(id, values);
+      message.success({ content: 'Variante actualizada correctamente', key: actionKey });
+      handleCloseEditModal(); // Close modal on success
+      fetchData(); // Refresh data
+    } catch (error) {
+        message.destroy(actionKey);
+        console.error(`Error updating product ${id}:`, error);
+        let errorMsg = 'Error al actualizar la variante.';
+        if (axios.isAxiosError(error) && error.response?.data?.message) {
+            errorMsg = Array.isArray(error.response.data.message) 
+                        ? error.response.data.message.join('; ') 
+                        : error.response.data.message;
+        }
+        modal.error({ title: 'Error al Actualizar', content: errorMsg });
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+  // --- End Edit Logic --- 
 
   const handleCancelModal = () => {
     setIsModalVisible(false);
@@ -250,7 +286,6 @@ const ProductsPage: React.FC = () => {
         const payloadForVariant: CreateProductPayload = {
           name: name,
           description: description,
-          code: variant.code,
           size: variant.size,
           color: variant.color,
           stock: Number(variant.stock ?? 0),
@@ -314,7 +349,7 @@ const ProductsPage: React.FC = () => {
         }
         // Use the defined interface for variants
         const hasIncompleteVariant = variants.some((variant: VariantFormData | undefined | null) => 
-          !variant || !variant.size || !variant.color || !variant.code || variant.sellingPrice === null || variant.sellingPrice === undefined
+          !variant || !variant.size || !variant.color /* || !variant.code */ || variant.sellingPrice === null || variant.sellingPrice === undefined
         );
         if (hasIncompleteVariant) {
            message.warning('Por favor, complete todos los campos requeridos para cada variante.');
@@ -601,16 +636,6 @@ const ProductsPage: React.FC = () => {
                         </Form.Item>
                          <Form.Item
                           {...restField}
-                          name={[name, 'code']}
-                          label="SKU Variante"
-                          rules={[{ required: true, message: 'Falta SKU' }]}
-                          tooltip="Código único para esta talla/color específico"
-                          style={{ marginBottom: 0 }}
-                        >
-                          <Input placeholder="Ej: ZAP-AZ-40" style={{ width: '150px' }} />
-                        </Form.Item>
-                         <Form.Item
-                          {...restField}
                           name={[name, 'sellingPrice']}
                           label="P. Venta"
                           rules={[{ required: true, message: 'Falta precio venta' }]}
@@ -713,6 +738,15 @@ const ProductsPage: React.FC = () => {
 
         </Form>
       </Modal>
+
+      {/* --- Add Edit Modal --- */}
+      <EditProductModal 
+         visible={isEditModalVisible}
+         product={editingProduct}
+         onClose={handleCloseEditModal}
+         onFinish={handleFinishEdit}
+         loading={isEditSubmitting}
+      />
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { LoginFormValues, RegisterFormValues } from '../types/formTypes';
-import { Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem, ProductionOrder, ProductionOrderStatus } from '../types/models'; // Importar tipo Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem, ProductionOrder, ProductionOrderStatus
+import { Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem, ProductionOrder, ProductionOrderStatus, SalesOrder } from '../types/models'; // Importar tipo Supplier, RawMaterial, Client, Product, StockMovement, MovementType, CompositionItem, ProductionOrder, ProductionOrderStatus, SalesOrder
 
 // Crear instancia de Axios con la URL base del backend
 const apiClient = axios.create({
@@ -40,7 +40,17 @@ type CompositionItemPayload = Omit<CompositionItem, 'id' | 'rawMaterial'>; // So
 type CreateProductPayload = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'composition'> & {
   composition?: CompositionItemPayload[];
 };
-type UpdateProductPayload = Partial<CreateProductPayload>;
+// Ensure UpdateProductPayload is exported
+export type UpdateProductPayload = Partial<CreateProductPayload & {
+    // Explicitly include fields we allow updating via the dedicated modal
+    code?: string;
+    size?: string;
+    color?: string;
+    sellingPrice?: number | null;
+    purchasePrice?: number | null;
+    stock?: number;
+    // Exclude name, description, composition for now
+}>;
 
 // Tipos para StockMovement DTOs
 type CreateStockMovementPayload = {
@@ -60,6 +70,30 @@ type CreateProductionOrderPayload = {
 type UpdateProductionOrderPayload = { // Para cambiar estado o notas
   status?: ProductionOrderStatus;
   notes?: string;
+};
+
+// Tipos para Sales Order DTOs - Add export
+export type SalesOrderItemPayload = {
+  productId: number;
+  quantity: number;
+  unitPrice: number;
+};
+
+export type CreateSalesOrderPayload = {
+  clientId: number;
+  items: SalesOrderItemPayload[];
+  notes?: string;
+};
+
+export type UpdateSalesOrderPayload = {
+  status?: string; // Keep string type for simplicity in API layer
+  notes?: string;
+  items?: SalesOrderItemPayload[]; // Add optional items array
+};
+
+// New Payload for updating only notes
+export type UpdateSalesOrderNotesPayload = {
+  notes?: string | null;
 };
 
 // --- Funciones del Servicio API ---
@@ -157,8 +191,8 @@ export const createProduct = async (productData: CreateProductPayload): Promise<
   return response.data;
 };
 
-export const updateProduct = async (id: number, productData: UpdateProductPayload): Promise<Product> => {
-  const response = await apiClient.patch<Product>(`/products/${id}`, productData);
+export const updateProduct = async (id: number, payload: UpdateProductPayload): Promise<Product> => {
+  const response = await apiClient.patch<Product>(`/products/${id}`, payload);
   return response.data;
 };
 
@@ -210,6 +244,40 @@ export const updateProductionOrder = async (id: number, updateData: UpdateProduc
 
 export const deleteProductionOrder = async (id: number): Promise<void> => {
   await apiClient.delete(`/production-orders/${id}`);
+};
+
+// --- Funciones API Sales Orders ---
+
+export const getSalesOrders = async (): Promise<SalesOrder[]> => {
+  // Asumiremos que SalesOrder se añade a ../types/models
+  const response = await apiClient.get<SalesOrder[]>('/sales-orders');
+  return response.data;
+};
+
+export const getSalesOrderById = async (id: number): Promise<SalesOrder> => {
+  const response = await apiClient.get<SalesOrder>(`/sales-orders/${id}`);
+  return response.data;
+};
+
+export const createSalesOrder = async (orderData: CreateSalesOrderPayload): Promise<SalesOrder> => {
+  const response = await apiClient.post<SalesOrder>('/sales-orders', orderData);
+  return response.data;
+};
+
+// General update (for status)
+export const updateSalesOrder = async (id: number, payload: UpdateSalesOrderPayload): Promise<SalesOrder> => {
+  const response = await apiClient.patch<SalesOrder>(`/sales-orders/${id}`, payload);
+  return response.data;
+};
+
+// New specific update for notes
+export const updateSalesOrderNotes = async (id: number, payload: UpdateSalesOrderNotesPayload): Promise<SalesOrder> => {
+  const response = await apiClient.patch<SalesOrder>(`/sales-orders/${id}/notes`, payload);
+  return response.data;
+};
+
+export const deleteSalesOrder = async (id: number): Promise<void> => {
+  await apiClient.delete(`/sales-orders/${id}`);
 };
 
 // --- Interceptor de Peticiones Axios para añadir Token JWT --- 

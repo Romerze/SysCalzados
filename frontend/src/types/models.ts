@@ -102,4 +102,48 @@ export interface ProductionOrder {
   createdAt: string; // ISO String
   startedAt?: string; // ISO String
   completedAt?: string; // ISO String
+}
+
+// --- Sales Orders ---
+
+export enum SalesOrderStatus {
+  PENDING = 'PENDING',
+  CONFIRMED = 'CONFIRMED',
+  PROCESSING = 'PROCESSING',
+  SHIPPED = 'SHIPPED',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+  REFUNDED = 'REFUNDED',
+}
+
+export interface SalesOrderItem {
+  id: number;
+  orderId: number;
+  productId: number;
+  product?: Product; // Producto cargado (opcional)
+  quantity: number;
+  unitPrice: number;
+  // subtotal?: number; // Calculable en frontend si es necesario
+}
+
+export interface SalesOrder {
+  id: number;
+  orderNumber?: string;
+  clientId: number;
+  client?: Client; // Cliente cargado (opcional)
+  orderDate: string; // ISO String
+  status: SalesOrderStatus;
+  items?: SalesOrderItem[]; // Items cargados (opcional)
+  notes?: string;
+  totalAmount?: number;
+  createdAt: string; // ISO String
+  updatedAt: string; // ISO String
+}
+
+// Interface for the grouped product model view (used in ProductsPage)
+export interface ProductModelView {
+  key: string; // Use name as key
+  name: string;
+  description?: string; 
+  variants: Product[]; 
 } 

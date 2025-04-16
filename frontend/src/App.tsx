@@ -9,6 +9,7 @@ import SuppliersPage from './pages/SuppliersPage';
 import RawMaterialsPage from './pages/RawMaterialsPage';
 import StockMovementsPage from './pages/StockMovementsPage';
 import ProductionOrdersPage from './pages/ProductionOrdersPage';
+import SalesOrdersPage from './pages/SalesOrdersPage';
 import './App.css'
 
 // Componente simple para la página principal (Dashboard)
@@ -47,6 +48,7 @@ function App() {
           <Route path="/productos" element={<ProductsPage />} />
           <Route path="/stock-movements" element={<StockMovementsPage />} />
           <Route path="/production-orders" element={<ProductionOrdersPage />} />
+          <Route path="/sales-orders" element={<SalesOrdersPage />} />
           {/* Añadir más rutas protegidas aquí (ej. /inventario, /produccion) */}
         </Route>
       </Route>

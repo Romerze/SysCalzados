@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
@@ -10,9 +11,12 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
 import { ProductCompositionService } from '../product-composition/product-composition.service';
 import { ProductComposition } from '../product-composition/entities/product-composition.entity';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
@@ -20,19 +24,34 @@ export class ProductsService {
   ) {}
 
   async create(createProductDto: CreateProductDto): Promise<Product> {
-    const { code, composition: compositionData, ...productData } = createProductDto;
+    const { name, size, color, composition: compositionData, ...productData } = createProductDto;
 
-    const existingByCode = await this.productRepository.findOne({ where: { code } });
-    if (existingByCode) {
-      throw new ConflictException(`El código de producto ${code} ya está registrado.`);
+    if (!name || !size || !color) {
+        throw new BadRequestException('Nombre, talla y color son requeridos para generar el código.');
+    }
+    const namePart = name.substring(0, 3).toUpperCase();
+    const colorPart = color.substring(0, 3).toUpperCase();
+    if (!namePart || !colorPart) {
+         throw new BadRequestException('Nombre y color deben tener al menos 1 caracter para generar el código.');
+    }
+    const sizePart = size.trim(); 
+    const generatedCode = `${namePart}-${sizePart}-${colorPart}`;
+    this.logger.log(`Generated SKU for product '${name}': ${generatedCode}`);
+
+    const existingByGeneratedCode = await this.productRepository.findOne({ where: { code: generatedCode } });
+    if (existingByGeneratedCode) {
+      throw new ConflictException(`El código de producto generado '${generatedCode}' ya existe.`);
     }
 
     const product = this.productRepository.create({
         ...productData,
-        code,
+        name,
+        size,
+        color,
+        code: generatedCode,
     });
     
-    if (product.stock === undefined) {
+    if (product.stock === undefined || product.stock === null) {
         product.stock = 0;
     }
     
@@ -44,7 +63,7 @@ export class ProductsService {
         productId: savedProduct.id,
       }));
       await Promise.all(
-        compositionItems.map(item => this.compositionService.create(item as any))
+        compositionItems.map(item => this.compositionService.create(item as ProductComposition))
       );
       return this.findOne(savedProduct.id);
     }
@@ -65,21 +84,9 @@ export class ProductsService {
   }
 
   async update(id: number, updateProductDto: UpdateProductDto): Promise<Product> {
-    const { code, composition: compositionData, ...restData } = updateProductDto;
+    const { composition: compositionData, ...restData } = updateProductDto;
 
     const productToUpdate = await this.findOne(id);
-
-    if (code && code !== productToUpdate.code) {
-        const existingByCode = await this.productRepository.findOne({ 
-            where: { 
-            code,
-            id: Not(id)
-            } 
-        });
-        if (existingByCode) {
-            throw new ConflictException(`El código de producto ${code} ya está registrado por otro producto.`);
-        }
-    }
 
     if (compositionData !== undefined) {
         await this.compositionService.removeAllByProduct(id);

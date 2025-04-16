@@ -12,6 +12,7 @@ import { ProductsModule } from './products/products.module';
 import { StockMovementsModule } from './stock-movements/stock-movements.module';
 import { ProductCompositionModule } from './product-composition/product-composition.module';
 import { ProductionOrdersModule } from './production-orders/production-orders.module';
+import { SalesOrdersModule } from './sales-orders/sales-orders.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ProductionOrdersModule } from './production-orders/production-orders.mo
     StockMovementsModule,
     ProductCompositionModule,
     ProductionOrdersModule,
+    SalesOrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

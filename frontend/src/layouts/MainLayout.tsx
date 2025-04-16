@@ -17,6 +17,7 @@ import {
   AppstoreOutlined, // Importar icono para Productos
   SwapOutlined, // Importar icono para Movimientos de Stock
   ToolOutlined, // Importar icono para Producción
+  ShoppingCartOutlined, // Icono para Pedidos Venta
 } from '@ant-design/icons';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom'; // Importar Outlet, useNavigate, Link, useLocation
 
@@ -34,6 +35,7 @@ const pathToKeyMap: { [key: string]: string } = {
   '/productos': '5', // Añadir mapeo para productos
   '/stock-movements': '6', // Añadir mapeo para movimientos
   '/production-orders': '7', // Añadir mapeo
+  '/sales-orders': '8', // Añadir mapeo para pedidos venta
 };
 
 const MainLayout: React.FC = () => {
@@ -94,6 +96,12 @@ const MainLayout: React.FC = () => {
       key: '7',
       icon: <ToolOutlined />,
       label: <Link to="/production-orders">Producción</Link>,
+    },
+    // Añadir item para Pedidos de Venta
+    {
+      key: '8',
+      icon: <ShoppingCartOutlined />,
+      label: <Link to="/sales-orders">Pedidos Venta</Link>,
     },
     // Añadir más ítems aquí (Inventario, Producción, etc.)
   ];

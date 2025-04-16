@@ -29,14 +29,31 @@ export class ProductionOrdersService {
   ) {}
 
   async create(createDto: CreateProductionOrderDto): Promise<ProductionOrder> {
-    // TODO: Generar orderNumber automáticamente?
     // TODO: Verificar si el producto existe y tiene composición?
-    
+    // (Verification happens in startProduction before actual consumption)
+
+    const orderNumber = this._generateProductionOrderNumber(); // Generate number
+    this.logger.log(`Generated production order number: ${orderNumber}`);
+
     const newOrder = this.orderRepository.create({
       ...createDto,
-      status: ProductionOrderStatus.PENDING, // Estado inicial
+      orderNumber: orderNumber, // Assign generated number
+      status: ProductionOrderStatus.PENDING,
     });
-    return this.orderRepository.save(newOrder);
+    
+    try {
+       const savedOrder = await this.orderRepository.save(newOrder);
+       this.logger.log(`Production order ${savedOrder.id} created successfully.`);
+       return savedOrder;
+    } catch (error) {
+       this.logger.error(`Failed to save production order: ${error.message}`, { 
+           stack: error.stack, 
+           query: error.query, 
+           parameters: error.parameters 
+       });
+       // Consider specific error handling (e.g., unique constraint on orderNumber? Unlikely)
+       throw new BadRequestException('Error al crear la orden de producción.');
+    }
   }
 
   findAll(): Promise<ProductionOrder[]> {
@@ -86,127 +103,143 @@ export class ProductionOrdersService {
   // --- Lógica de negocio principal --- 
 
   private async startProduction(order: ProductionOrder): Promise<ProductionOrder> {
+    this.logger.log(`Attempting to start production for order ${order?.id ?? 'N/A'}`);
     if (order.status !== ProductionOrderStatus.PENDING) {
-      throw new BadRequestException('La orden de producción ya no está pendiente.');
+      throw new BadRequestException('La orden de producción no está pendiente.');
     }
 
-    // 1. Obtener producto y su composición
-    // Usamos el ID de la orden o el objeto producto ya cargado si eager es confiable
-    const product = await this.productsService.findOne(order.productId); 
-    if (!product.composition || product.composition.length === 0) {
-      throw new BadRequestException(`El producto ${product.name} (${product.code}) no tiene una composición definida.`);
+    // 1. Get product and composition (safe access)
+    const product = await this.productsService.findOne(order.productId);
+    if (!product?.composition || product.composition.length === 0) {
+      throw new BadRequestException(`El producto ${product?.name ?? order.productId} no tiene composición definida.`);
     }
 
-    // 2. Verificar stock de todas las materias primas necesarias
+    // 2. Check stock (existing logic)
     const stockErrors: string[] = [];
     for (const item of product.composition) {
-      const requiredQuantity = Number(item.quantity) * order.quantityToProduce;
-      // Obtener la materia prima específica para verificar stock actual
-      try {
-        const rawMaterial = await this.rawMaterialsService.findOne(item.rawMaterialId);
-        const currentStock = Number(rawMaterial.stock);
-        if (currentStock < requiredQuantity) {
-          stockErrors.push(`Stock insuficiente para ${rawMaterial.name}: se necesitan ${requiredQuantity.toFixed(3)} ${rawMaterial.unit}, disponibles ${currentStock.toFixed(2)} ${rawMaterial.unit}`);
+        if (!item?.rawMaterialId || !item.quantity) continue; // Skip invalid composition items
+        const requiredQuantity = Number(item.quantity) * order.quantityToProduce;
+        try {
+            const rawMaterial = await this.rawMaterialsService.findOne(item.rawMaterialId);
+            const currentStock = Number(rawMaterial?.stock ?? 0);
+            if (currentStock < requiredQuantity) {
+                stockErrors.push(`Stock insuficiente para ${rawMaterial?.name ?? item.rawMaterialId}: necesita ${requiredQuantity.toFixed(3)}, disponibles ${currentStock.toFixed(2)}`);
+            }
+        } catch (error) {
+            if (error instanceof NotFoundException) {
+                stockErrors.push(`Materia prima ID ${item.rawMaterialId} no encontrada.`);
+            } else {
+                this.logger.error(`Error checking stock for RM ${item.rawMaterialId}: ${error.message}`, error.stack);
+                stockErrors.push(`Error al verificar stock para RM ID ${item.rawMaterialId}.`);
+            }
         }
-      } catch (error) {
-        // Capturar NotFoundException si una materia prima de la composición no existe
-         if (error instanceof NotFoundException) {
-            stockErrors.push(`Materia prima con ID ${item.rawMaterialId} (parte de la composición) no encontrada.`);
-        } else {
-            throw error; // Relanzar otros errores inesperados
-        }
-      }
     }
 
-    // 4. Si NO hay stock, lanzar BadRequestException
     if (stockErrors.length > 0) {
-      throw new BadRequestException(`No se puede iniciar la producción por falta de stock: \n- ${stockErrors.join('\n- ')}`);
+      throw new BadRequestException(`No se puede iniciar producción por falta de stock: \n- ${stockErrors.join('\n- ')}`);
     }
-
-    // 3. Si hay stock, cambiar estado a IN_PROGRESS y guardar
-    order.status = ProductionOrderStatus.IN_PROGRESS;
-    // 5. Establecer startedAt
-    order.startedAt = new Date();
     
-    console.log(`Iniciando producción para la orden ${order.id} - ${product.name}...`);
-    return this.orderRepository.save(order);
-  }
-
-  private async completeProduction(order: ProductionOrder): Promise<ProductionOrder> {
-    if (order.status !== ProductionOrderStatus.IN_PROGRESS) {
-      throw new BadRequestException(
-        'Solo se puede completar una orden que está en progreso.',
-      );
-    }
-
-    this.logger.log(`Intentando completar producción para la orden ${order.id}...`);
-
-    // Usar una transacción
+    // 3. Stock is sufficient - Start Transaction for Consumption and Status Update
+    this.logger.log(`Stock sufficient for order ${order.id}. Starting transaction...`);
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // 2. Obtener producto y composición (usar el producto ya cargado por eager)
-      const product = order.product;
-      if (!product.composition || product.composition.length === 0) {
-        // Esta verificación también está en start, pero es bueno tenerla aquí por si acaso
-        throw new BadRequestException(`El producto ${product.name} no tiene composición definida.`);
-      }
+        // 3a. Consume Raw Materials (Create EXIT movements)
+        this.logger.log(`Consuming raw materials for order ${order.id}...`);
+        for (const item of product.composition) {
+            if (!item?.rawMaterialId || !item.quantity) continue; 
+            const consumedQuantity = Number(item.quantity) * order.quantityToProduce;
+            
+            // Call createMovement without the EntityManager
+            await this.stockMovementsService.createMovement({
+                rawMaterialId: item.rawMaterialId,
+                type: MovementType.EXIT,
+                quantity: consumedQuantity,
+                notes: `Consumo para Orden de Producción #${order.orderNumber || order.id}`,
+            }); // Removed queryRunner.manager
+             this.logger.debug(`Stock movement EXIT created for RM ${item.rawMaterialId}: ${consumedQuantity}`);
+        }
 
-      // 3. Crear movimientos de stock de SALIDA para MP consumidas
-      this.logger.log(`Generando movimientos de stock de salida para orden ${order.id}...`);
-      for (const item of product.composition) {
-        const consumedQuantity = Number(item.quantity) * order.quantityToProduce;
+        // 3b. Update Order Status and Start Time
+        order.status = ProductionOrderStatus.IN_PROGRESS;
+        order.startedAt = new Date();
         
-        // Usaremos el stockMovementsService dentro de la transacción
-        // Necesitamos asegurar que los repositorios usados por este servicio
-        // sean manejados por el queryRunner de la transacción.
-        // Una forma es pasar el queryRunner a los métodos del servicio si están diseñados para ello,
-        // o usar directamente los repositorios con el manager del queryRunner.
-        // Por simplicidad aquí, asumiremos que createMovement puede fallar y la transacción hará rollback.
-        // Idealmente, se refactorizaría createMovement para aceptar un EntityManager.
+        // 3c. Save the updated order within the transaction
+        const savedOrder = await queryRunner.manager.save(order);
+        this.logger.log(`Order ${order.id} status updated to IN_PROGRESS and saved.`);
 
-        await this.stockMovementsService.createMovement({
-          rawMaterialId: item.rawMaterialId,
-          type: MovementType.EXIT,
-          quantity: consumedQuantity,
-          notes: `Consumo para Orden de Producción #${order.orderNumber || order.id}`,
-        });
-        this.logger.debug(`Movimiento de salida creado para RM ${item.rawMaterialId}: ${consumedQuantity}`);
+        // 3d. Commit Transaction
+        await queryRunner.commitTransaction();
+        this.logger.log(`Transaction committed for starting order ${order.id}.`);
+        return savedOrder;
+
+    } catch (error) {
+        this.logger.error(`Error during startProduction transaction for order ${order.id}. Rolling back.`, error instanceof Error ? error.stack : undefined);
+        await queryRunner.rollbackTransaction();
+        // Rethrow a user-friendly error
+        throw new BadRequestException(`Error al iniciar producción y consumir materiales: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    } finally {
+        await queryRunner.release();
+    }
+  }
+
+  private async completeProduction(order: ProductionOrder): Promise<ProductionOrder> {
+    if (order.status !== ProductionOrderStatus.IN_PROGRESS) {
+      throw new BadRequestException('Solo se puede completar una orden en progreso.');
+    }
+    this.logger.log(`Attempting to complete production for order ${order.id}...`);
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. Get product (should be loaded by relation or refetch if needed)
+      const product = await this.productsService.findOne(order.productId);
+      if (!product) {
+          throw new NotFoundException(`Producto ID ${order.productId} no encontrado al completar la orden ${order.id}`);
       }
 
-      // 4. Actualizar el stock del PRODUCTO FINAL
+      // 2. REMOVED: Raw material consumption logic (moved to startProduction)
+      // this.logger.log(`Generando movimientos de stock de salida para orden ${order.id}...`);
+      // for (const item of product.composition) { ... }
+
+      // 3. Update Finished Product Stock
       this.logger.log(`Actualizando stock del producto ${product.id} para orden ${order.id}...`);
-      const currentProductStock = Number(product.stock); // Obtener stock actual del producto
-      const newProductStock = currentProductStock + order.quantityToProduce;
+      const currentProductStock = Number(product.stock ?? 0); 
+      // Ensure quantityToProduce is treated as number
+      const quantityProduced = Number(order.quantityToProduce ?? 0);
+      if (isNaN(quantityProduced) || quantityProduced <= 0) {
+          // Should not happen if validation was correct on create
+           throw new Error(`Cantidad a producir inválida (${order.quantityToProduce}) en la orden ${order.id}`);
+      }
+      const newProductStock = currentProductStock + quantityProduced;
       
-      // Actualizar SOLO el stock usando productsService.update
+      // Use the ProductService to update stock
+      // Assumption: productsService.update handles saving the product entity
       await this.productsService.update(product.id, { stock: newProductStock });
       this.logger.debug(`Stock del producto ${product.id} actualizado a ${newProductStock}`);
 
-      // 5. Cambiar estado a COMPLETED y guardar
+      // 4. Update Order Status and Completion Time
       order.status = ProductionOrderStatus.COMPLETED;
-      // 6. Establecer completedAt
       order.completedAt = new Date();
       
-      // Guardar la orden actualizada usando el manager de la transacción
+      // 5. Save the updated order within the transaction
       const savedOrder = await queryRunner.manager.save(order);
-      this.logger.log(`Orden ${order.id} marcada como COMPLETADA.`);
+      this.logger.log(`Order ${order.id} marcada como COMPLETADA.`);
 
-      // Si todo fue bien, confirmar la transacción
+      // 6. Commit Transaction
       await queryRunner.commitTransaction();
       return savedOrder; 
 
     } catch (error) {
-      // Si algo falla, revertir la transacción
-      this.logger.error(`Error al completar orden ${order.id}. Reversando transacción.`, error.stack);
-      await queryRunner.rollbackTransaction();
-      // Relanzar el error para que Nest lo maneje
-      // Podríamos mapear errores específicos (ej. stock insuficiente durante createMovement)
-      throw error; 
+       // ... (Rollback and error handling) ...
+       this.logger.error(`Error al completar orden ${order.id}. Reversando transacción.`, error instanceof Error ? error.stack : undefined);
+       await queryRunner.rollbackTransaction();
+       throw error; // Rethrow original error
     } finally {
-      // Siempre liberar el queryRunner
       await queryRunner.release();
     }
   }
@@ -220,6 +253,19 @@ export class ProductionOrdersService {
        order.status = ProductionOrderStatus.CANCELLED;
        order.notes = notes ? (order.notes ? `${order.notes}\nCancelada: ${notes}` : `Cancelada: ${notes}`) : order.notes;
        return this.orderRepository.save(order);
+  }
+
+  // --- Helper Method for Order Number --- 
+  private _generateProductionOrderNumber(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
+    // Get hour and minute
+    const hour = now.getHours().toString().padStart(2, '0');
+    const minute = now.getMinutes().toString().padStart(2, '0');
+    // Construct the new format
+    return `ORD-${year}${month}${day}${hour}${minute}`;
   }
 
 } 
